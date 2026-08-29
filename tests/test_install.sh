@@ -52,7 +52,7 @@ fi
 if [[ "${1:-}" == create && "${2:-}" == namespace ]]; then
   printf 'apiVersion: v1\nkind: Namespace\nmetadata:\n  name: %s\n' "${3:-test}"
 fi
-if [[ "$*" == *" apply -f -"* ]]; then
+if [[ "${1:-}" == apply && "${2:-}" == -f && "${3:-}" == - ]]; then
   cat >/dev/null
 fi
 EOF

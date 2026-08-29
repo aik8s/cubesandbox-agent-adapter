@@ -1,6 +1,6 @@
 name: cube-adapter-tools
 version: "0.1.0"
-manifest_version: 2
+manifest_version: 1
 api_version: 1
 description: Route Hermes Agent shell and file work into a policy-controlled CubeSandbox MicroVM.
 author: aik8s
