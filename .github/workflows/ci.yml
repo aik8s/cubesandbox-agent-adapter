@@ -20,7 +20,7 @@ jobs:
           cache-dependency-path: adapter/requirements.txt
       - run: pip install -r adapter/requirements.txt
       - run: python -m unittest -v adapter/test_cube_adapter.py
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - run: node --check plugins/openclaw/index.js
