@@ -1,5 +1,7 @@
 # cubesandbox-agent-adapter
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 Community integration that routes OpenClaw and DeepSeek Harness (DSH) tool
 calls into policy-controlled [CubeSandbox](https://github.com/TencentCloud/CubeSandbox)
 MicroVMs.
@@ -18,6 +20,42 @@ return only short Sandbox references to the model.
 > **Project status:** v0.1.0 is a working reference implementation, not a
 > production-ready multi-tenant control plane. Read [Security and current
 > limits](#security-and-current-limits) before exposing it to untrusted users.
+
+## Hands-on evidence
+
+The following screenshots come from real OpenClaw and DSH sessions connected
+to a Kubernetes-hosted CubeSandbox deployment. They are evidence from a
+functional lab run, not a benchmark or a production-readiness claim.
+
+OpenClaw called only the Adapter's `cube_exec` and `cube_release` tools. The
+result identifies `cubesandbox-microvm` as the executor and returns only the
+short Sandbox reference `45a28df5`:
+
+![OpenClaw calling CubeSandbox Adapter tools](docs/assets/readme/openclaw-direct-result.jpg)
+
+DSH performed the same path through its Cordis Plugin. Its trace records the
+`cube_exec` and `cube_release` calls and the short reference `f795f7fc`:
+
+![DSH CubeSandbox tool trace](docs/assets/readme/dsh-direct-trace.jpg)
+
+While that DSH command was running, CubeSandbox WebUI showed the matching
+`f795f7...` MicroVM as `running`:
+
+![A running MicroVM in CubeSandbox WebUI](docs/assets/readme/cubesandbox-live-sandbox.jpg)
+
+The Adapter audit page correlates OpenClaw and DSH actions by runtime, request
+ID and short Sandbox reference while omitting commands, output, tokens and full
+Sandbox IDs:
+
+![Redacted Cube Adapter audit events](docs/assets/readme/adapter-audit.jpg)
+
+For the full environment, commands, limitations and evidence, read the
+following Chinese articles on [aik8s.run](https://aik8s.run/):
+
+- [CubeSandbox Kubernetes deployment requirements and production assessment](https://aik8s.run/ai-k8s/rag-agent/cubesandbox-kubernetes/)
+- [CubeSandbox Kubernetes hands-on deployment](https://aik8s.run/ai-k8s/rag-agent/cubesandbox-kubernetes-practice/)
+- [CubeSandbox with OpenClaw and DSH: enterprise execution-plane practice](https://aik8s.run/ai-k8s/rag-agent/cubesandbox-openclaw-dsh-enterprise-practice/)
+- [Agent Sandbox selection and architecture analysis](https://aik8s.run/ai-k8s/rag-agent/agent-sandbox-selection/)
 
 ## What is included
 
