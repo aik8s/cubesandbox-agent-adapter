@@ -1,0 +1,290 @@
+openapi: 3.1.0
+info:
+  title: CubeSandbox Agent Adapter API
+  version: 0.1.0
+  description: >-
+    Authenticated, policy-controlled execution API used by Agent runtime
+    plugins. Full Sandbox IDs and traffic tokens are intentionally absent.
+servers:
+  - url: http://127.0.0.1:18080
+    description: local development
+security:
+  - bearerAuth: []
+paths:
+  /healthz:
+    get:
+      security: []
+      operationId: health
+      responses:
+        "200":
+          description: Adapter health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /v1/leases/acquire:
+    post:
+      operationId: acquireLease
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AcquireRequest"
+      responses:
+        "200":
+          description: New or reused session lease
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Lease"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Denied"
+  /v1/leases/{lease_ref}/exec:
+    post:
+      operationId: executeCommand
+      parameters:
+        - $ref: "#/components/parameters/LeaseRef"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ExecRequest"
+      responses:
+        "200":
+          description: Redacted execution result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/leases/{lease_ref}/read:
+    post:
+      operationId: readFile
+      parameters:
+        - $ref: "#/components/parameters/LeaseRef"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PathRequest"
+      responses:
+        "200":
+          description: UTF-8 file content
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Denied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/leases/{lease_ref}/write:
+    post:
+      operationId: writeFile
+      parameters:
+        - $ref: "#/components/parameters/LeaseRef"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WriteRequest"
+      responses:
+        "200":
+          description: Write result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WriteResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Denied"
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /v1/leases/{lease_ref}/release:
+    post:
+      operationId: releaseLease
+      parameters:
+        - $ref: "#/components/parameters/LeaseRef"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReleaseRequest"
+      responses:
+        "200":
+          description: Release result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleaseResult"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    LeaseRef:
+      name: lease_ref
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Opaque lease returned to the trusted Runtime plugin.
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Denied:
+      description: Policy denied the request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Lease does not exist or has expired
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Health:
+      type: object
+      required: [status, version, active_leases]
+      properties:
+        status: { type: string, const: ok }
+        version: { type: string }
+        active_leases: { type: integer, minimum: 0 }
+    AcquireRequest:
+      type: object
+      additionalProperties: false
+      required: [runtime, session_key]
+      properties:
+        runtime: { type: string, enum: [openclaw, dsh] }
+        session_key: { type: string, minLength: 1, maxLength: 512 }
+        profile: { type: string, enum: [offline-code], default: offline-code }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    Lease:
+      type: object
+      required: [executor, lease_ref, sandbox_ref, profile, reused]
+      properties:
+        executor: { type: string, const: cubesandbox-microvm }
+        lease_ref: { type: string }
+        sandbox_ref: { $ref: "#/components/schemas/SandboxRef" }
+        profile: { type: string, const: offline-code }
+        reused: { type: boolean }
+    ExecRequest:
+      type: object
+      additionalProperties: false
+      required: [command]
+      properties:
+        command: { type: string, minLength: 1, maxLength: 16384 }
+        cwd: { type: string, pattern: "^/(workspace|tmp)(/|$)" }
+        timeout_ms: { type: integer, minimum: 1, maximum: 120000 }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    ExecResult:
+      type: object
+      required:
+        - executor
+        - sandbox_ref
+        - request_id
+        - exit_code
+        - stdout
+        - stderr
+        - stdout_truncated
+        - stderr_truncated
+        - duration_ms
+      properties:
+        executor: { type: string, const: cubesandbox-microvm }
+        sandbox_ref: { $ref: "#/components/schemas/SandboxRef" }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+        exit_code: { type: integer }
+        stdout: { type: string }
+        stderr: { type: string }
+        stdout_truncated: { type: boolean }
+        stderr_truncated: { type: boolean }
+        duration_ms: { type: integer, minimum: 0 }
+    PathRequest:
+      type: object
+      additionalProperties: false
+      required: [path]
+      properties:
+        path: { type: string, pattern: "^/(workspace|tmp)(/|$)" }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    WriteRequest:
+      type: object
+      additionalProperties: false
+      required: [path, content]
+      properties:
+        path: { type: string, pattern: "^/(workspace|tmp)(/|$)" }
+        content: { type: string, maxLength: 262144 }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    ReadResult:
+      type: object
+      required: [executor, sandbox_ref, request_id, path, content, truncated]
+      properties:
+        executor: { type: string, const: cubesandbox-microvm }
+        sandbox_ref: { $ref: "#/components/schemas/SandboxRef" }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+        path: { type: string }
+        content: { type: string }
+        truncated: { type: boolean }
+    WriteResult:
+      type: object
+      required: [executor, sandbox_ref, request_id, path, bytes]
+      properties:
+        executor: { type: string, const: cubesandbox-microvm }
+        sandbox_ref: { $ref: "#/components/schemas/SandboxRef" }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+        path: { type: string }
+        bytes: { type: integer, minimum: 0 }
+    ReleaseRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        action: { type: string, enum: [pause, kill], default: pause }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    ReleaseResult:
+      type: object
+      required: [executor, sandbox_ref, request_id, action]
+      properties:
+        executor: { type: string, const: cubesandbox-microvm }
+        sandbox_ref: { $ref: "#/components/schemas/SandboxRef" }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+        action: { type: string, enum: [pause, kill] }
+    SandboxRef:
+      type: string
+      pattern: "^[A-Za-z0-9_-]{1,16}$"
+      description: Short non-authorizing correlation reference.
+    RequestId:
+      type: string
+      pattern: "^[A-Za-z0-9_.:-]{1,80}$"
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code: { type: string }
+            message: { type: string }

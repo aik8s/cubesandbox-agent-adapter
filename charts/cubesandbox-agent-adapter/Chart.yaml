@@ -1,0 +1,16 @@
+apiVersion: v2
+name: cubesandbox-agent-adapter
+description: Policy-controlled CubeSandbox execution adapter for Agent runtimes
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+home: https://github.com/aik8s/cubesandbox-agent-adapter
+sources:
+  - https://github.com/aik8s/cubesandbox-agent-adapter
+keywords:
+  - cubesandbox
+  - openclaw
+  - deepseek-harness
+  - microvm
+maintainers:
+  - name: runzhliu

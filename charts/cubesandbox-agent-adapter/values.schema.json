@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "replicaCount": { "type": "integer", "minimum": 1, "maximum": 1 },
+    "image": {
+      "type": "object",
+      "required": ["repository", "tag"],
+      "properties": {
+        "repository": { "type": "string", "minLength": 1 },
+        "tag": { "type": "string", "minLength": 1 },
+        "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
+      }
+    },
+    "auth": {
+      "type": "object",
+      "required": ["existingSecret", "tokenKey", "hmacKey"],
+      "properties": {
+        "existingSecret": { "type": "string", "minLength": 1 },
+        "tokenKey": { "type": "string", "minLength": 1 },
+        "hmacKey": { "type": "string", "minLength": 1 }
+      }
+    },
+    "cube": {
+      "type": "object",
+      "required": ["apiUrl", "proxyHost", "proxyPort", "templateId"],
+      "properties": {
+        "apiUrl": { "type": "string", "pattern": "^https?://" },
+        "proxyHost": { "type": "string", "minLength": 1 },
+        "proxyPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+        "templateId": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

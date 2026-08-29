@@ -1,0 +1,10 @@
+CubeSandbox Agent Adapter is installed.
+
+Service URL inside this namespace:
+  http://{{ include "cubesandbox-agent-adapter.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}
+
+Label each in-namespace Runtime Pod that may call the Adapter:
+  cubesandbox-agent-adapter-client: "true"
+
+The sample audit volume is ephemeral. Export JSONL events to durable storage
+before using this deployment beyond a test environment.

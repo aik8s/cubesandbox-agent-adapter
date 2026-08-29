@@ -1,0 +1,20 @@
+- id: tool-bash
+  disabled: true
+
+- id: tool-fs
+  disabled: true
+
+- id: tool-fs-search
+  disabled: true
+
+- id: tool-str-replace-editor
+  disabled: true
+
+- id: tool-pwsh
+  disabled: true
+
+- insert:
+    - id: cube-adapter-tools
+      name: '@cubesandbox-agent-adapter/dsh-plugin'
+      config:
+        profile: offline-code

@@ -1,0 +1,50 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/aik8s/cubesandbox-agent-adapter
+  tag: v0.1.0
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+auth:
+  existingSecret: cube-adapter-auth
+  tokenKey: token
+  hmacKey: hmac-key
+
+cube:
+  apiUrl: http://cube-api.cube-system.svc:3000
+  proxyHost: cube-proxy.cube-system.svc
+  proxyPort: 80
+  templateId: agent-code
+
+adapter:
+  sandboxTimeoutSeconds: 300
+  maxCommandSeconds: 120
+  auditUi: false
+
+service:
+  type: ClusterIP
+  port: 18080
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+
+networkPolicy:
+  enabled: true
+  cubeNamespace: cube-system
+  cubeApiPort: 3000
+  cubeProxyPort: 80
+  clientPodSelector:
+    cubesandbox-agent-adapter-client: "true"
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

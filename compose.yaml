@@ -1,0 +1,23 @@
+services:
+  adapter:
+    image: ghcr.io/aik8s/cubesandbox-agent-adapter:v0.1.0
+    build:
+      context: ./adapter
+    env_file:
+      - .env
+    ports:
+      - 127.0.0.1:18080:18080
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,uid=65532,gid=65532
+      - /var/log/cube-adapter:rw,noexec,nosuid,size=64m,uid=65532,gid=65532
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18080/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped

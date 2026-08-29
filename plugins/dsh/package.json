@@ -1,0 +1,15 @@
+{
+  "name": "@cubesandbox-agent-adapter/dsh-plugin",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aik8s/cubesandbox-agent-adapter.git",
+    "directory": "plugins/dsh"
+  },
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js"
+  }
+}

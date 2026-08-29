@@ -1,0 +1,114 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "cubesandbox-agent-adapter.fullname" . }}
+  labels:
+    {{- include "cubesandbox-agent-adapter.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "cubesandbox-agent-adapter.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml .Values.podAnnotations | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "cubesandbox-agent-adapter.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml .Values.podLabels | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "cubesandbox-agent-adapter.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: adapter
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: CUBE_ADAPTER_BIND
+              value: 0.0.0.0
+            - name: CUBE_ADAPTER_PORT
+              value: {{ .Values.service.port | quote }}
+            - name: CUBE_ADAPTER_AUDIT_LOG
+              value: /var/log/cube-adapter/audit.jsonl
+            - name: CUBE_ADAPTER_AUDIT_UI
+              value: {{ ternary "1" "0" .Values.adapter.auditUi | quote }}
+            - name: CUBE_ADAPTER_SANDBOX_TIMEOUT
+              value: {{ .Values.adapter.sandboxTimeoutSeconds | quote }}
+            - name: CUBE_ADAPTER_MAX_COMMAND_SECONDS
+              value: {{ .Values.adapter.maxCommandSeconds | quote }}
+            - name: CUBE_ADAPTER_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.existingSecret }}
+                  key: {{ .Values.auth.tokenKey }}
+            - name: CUBE_ADAPTER_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.existingSecret }}
+                  key: {{ .Values.auth.hmacKey }}
+            - name: CUBE_TEMPLATE_ID
+              value: {{ .Values.cube.templateId | quote }}
+            - name: CUBE_API_URL
+              value: {{ .Values.cube.apiUrl | quote }}
+            - name: CUBE_PROXY_NODE_IP
+              value: {{ .Values.cube.proxyHost | quote }}
+            - name: CUBE_PROXY_PORT_HTTP
+              value: {{ .Values.cube.proxyPort | quote }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+          volumeMounts:
+            - name: audit
+              mountPath: /var/log/cube-adapter
+            - name: tmp
+              mountPath: /tmp
+      securityContext:
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - name: audit
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

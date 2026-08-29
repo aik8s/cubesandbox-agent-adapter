@@ -1,0 +1,19 @@
+{
+  "name": "@cubesandbox-agent-adapter/openclaw-plugin",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aik8s/cubesandbox-agent-adapter.git",
+    "directory": "plugins/openclaw"
+  },
+  "peerDependencies": {
+    "openclaw": ">=2026.5.17"
+  },
+  "openclaw": {
+    "extensions": [
+      "./index.js"
+    ]
+  }
+}
