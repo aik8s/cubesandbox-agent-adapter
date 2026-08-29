@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: CubeSandbox Agent Adapter API
-  version: 0.1.0
+  version: 0.2.0
   description: >-
     Authenticated, policy-controlled execution API used by Agent runtime
     plugins. Full Sandbox IDs and traffic tokens are intentionally absent.
@@ -179,7 +179,7 @@ components:
       additionalProperties: false
       required: [runtime, session_key]
       properties:
-        runtime: { type: string, enum: [openclaw, dsh] }
+        runtime: { type: string, enum: [openclaw, dsh, hermes] }
         session_key: { type: string, minLength: 1, maxLength: 512 }
         profile: { type: string, enum: [offline-code], default: offline-code }
         request_id: { $ref: "#/components/schemas/RequestId" }

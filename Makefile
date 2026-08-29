@@ -5,7 +5,7 @@ PYTHON ?= python3
 test: test-python test-node test-install helm-lint
 
 test-python:
-	$(PYTHON) -m unittest -v adapter/test_cube_adapter.py
+	$(PYTHON) -m unittest -v adapter/test_cube_adapter.py plugins/hermes/test_plugin.py
 
 test-node:
 	node --check plugins/openclaw/index.js

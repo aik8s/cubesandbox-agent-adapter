@@ -28,6 +28,12 @@ set -euo pipefail
 printf 'dsh %s\n' "$*" >>"$TEST_CALLS"
 EOF
 
+cat >"$TEST_DIR/bin/hermes" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'hermes %s\n' "$*" >>"$TEST_CALLS"
+EOF
+
 cat >"$TEST_DIR/bin/kubectl" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -56,7 +62,7 @@ cat >"$TEST_DIR/bin/helm" <<'EOF'
 set -euo pipefail
 printf 'helm %s\n' "$*" >>"$TEST_CALLS"
 EOF
-chmod +x "$TEST_DIR/bin/openclaw" "$TEST_DIR/bin/dsh" "$TEST_DIR/bin/kubectl" "$TEST_DIR/bin/helm"
+chmod +x "$TEST_DIR/bin/openclaw" "$TEST_DIR/bin/dsh" "$TEST_DIR/bin/hermes" "$TEST_DIR/bin/kubectl" "$TEST_DIR/bin/helm"
 
 export TEST_CALLS="$TEST_DIR/calls.log"
 export XDG_CONFIG_HOME="$TEST_DIR/config"
@@ -64,7 +70,7 @@ export PATH="$TEST_DIR/bin:$PATH"
 
 "$ROOT_DIR/scripts/install.sh" adapter \
   --namespace adapter-test \
-  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.1.0 \
+  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.2.0 \
   --cube-api-url https://cube-api.example.test \
   --cube-api-port 443 \
   --cube-proxy-host cube-proxy.example.test \
@@ -100,5 +106,16 @@ grep -F "adapterUrl: 'http://127.0.0.1:18080'" "$PATCH_FILE" >/dev/null
 grep -F "tokenFile: '$EXPORTED_TOKEN'" "$PATCH_FILE" >/dev/null
 grep -F 'disabled: true' "$PATCH_FILE" >/dev/null
 grep -F "name: '@cubesandbox-agent-adapter/dsh-plugin'" "$PATCH_FILE" >/dev/null
+
+"$ROOT_DIR/scripts/install.sh" hermes \
+  --adapter-url http://127.0.0.1:18080 \
+  --token-file "$EXPORTED_TOKEN"
+
+grep -F 'hermes plugins install aik8s/cubesandbox-agent-adapter/plugins/hermes --no-enable --force' "$TEST_CALLS" >/dev/null
+grep -F 'hermes plugins enable cube-adapter-tools --no-allow-tool-override' "$TEST_CALLS" >/dev/null
+grep -F "hermes config set plugins.entries.cube-adapter-tools.settings.adapter_url http://127.0.0.1:18080" "$TEST_CALLS" >/dev/null
+grep -F "hermes config set plugins.entries.cube-adapter-tools.settings.token_file $EXPORTED_TOKEN" "$TEST_CALLS" >/dev/null
+grep -F 'hermes config set plugins.entries.cube-adapter-tools.settings.profile offline-code' "$TEST_CALLS" >/dev/null
+grep -F 'hermes plugins doctor cube-adapter-tools --ci' "$TEST_CALLS" >/dev/null
 
 printf 'installer tests: OK\n'

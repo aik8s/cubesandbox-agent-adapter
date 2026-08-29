@@ -2,30 +2,31 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Community integration that routes OpenClaw and DeepSeek Harness (DSH) tool
-calls into policy-controlled [CubeSandbox](https://github.com/TencentCloud/CubeSandbox)
-MicroVMs.
+Community integration that routes OpenClaw, DeepSeek Harness (DSH) and Hermes
+Agent tool calls into policy-controlled
+[CubeSandbox](https://github.com/TencentCloud/CubeSandbox) MicroVMs.
 
 ```text
 OpenClaw Tool Plugin ─┐
-                     ├─ authenticated HTTP ─→ Adapter ─→ Cube SDK ─→ MicroVM
-DSH Cordis Plugin ───┘                              │
-                                                   └─ redacted JSONL audit
+DSH Cordis Plugin ────┼─ authenticated HTTP ─→ Adapter ─→ Cube SDK ─→ MicroVM
+Hermes Tool Plugin ───┘                              │
+                                                    └─ redacted JSONL audit
 ```
 
 The Adapter is the only component that holds Cube connection settings, full
 Sandbox IDs and traffic tokens. Runtime plugins receive opaque leases and
 return only short Sandbox references to the model.
 
-> **Project status:** v0.1.0 is a working reference implementation, not a
+> **Project status:** v0.2.0 is a working reference implementation, not a
 > production-ready multi-tenant control plane. Read [Security and current
 > limits](#security-and-current-limits) before exposing it to untrusted users.
 
 ## Hands-on evidence
 
-The following screenshots come from real OpenClaw and DSH sessions connected
-to a Kubernetes-hosted CubeSandbox deployment. They are evidence from a
-functional lab run, not a benchmark or a production-readiness claim.
+The following screenshots come from real OpenClaw, DSH and Hermes Agent
+sessions connected to a Kubernetes-hosted CubeSandbox deployment. They are
+evidence from a functional lab run, not a benchmark or a production-readiness
+claim.
 
 OpenClaw called only the Adapter's `cube_exec` and `cube_release` tools. The
 result identifies `cubesandbox-microvm` as the executor and returns only the
@@ -49,6 +50,32 @@ Sandbox IDs:
 
 ![Redacted Cube Adapter audit events](docs/assets/readme/adapter-audit.jpg)
 
+### Hermes Agent native plugin
+
+The integration is a standalone Hermes native Tool Plugin. The official Hermes
+0.20.6 dashboard shows `cube-adapter-tools` as a user plugin with no built-in
+tool override and with status `enabled`:
+
+![Hermes Agent CubeSandbox plugin enabled](docs/assets/readme/hermes-plugin-enabled.jpg)
+
+The tested Hermes session contains eight messages and three tool calls. Hermes'
+default tool compression may present deferred plugin tools through
+`tool_describe` and `tool_call`; the calls still resolve to the plugin's
+`cube_exec` and `cube_release` handlers:
+
+![Hermes Agent CubeSandbox session tool history](docs/assets/readme/hermes-session-tools.jpg)
+
+During the 60-second command, CubeSandbox WebUI showed the matching
+`3b287c...` MicroVM as `running`:
+
+![Hermes-triggered MicroVM running in CubeSandbox](docs/assets/readme/hermes-cubesandbox-live.jpg)
+
+After completion, the redacted audit page records the same `3b287c8f` short
+reference across `acquire`, `exec` and `release`, with runtime `hermes`, an
+`ok` outcome and zero active leases:
+
+![Hermes CubeSandbox acquire exec release audit trail](docs/assets/readme/hermes-adapter-audit.jpg)
+
 For the full environment, commands, limitations and evidence, read the
 following Chinese articles on [aik8s.run](https://aik8s.run/):
 
@@ -63,7 +90,8 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
 - fail-closed `offline-code` policy;
 - OpenClaw Tool Plugin: `cube_exec`, `cube_read`, `cube_write`, `cube_release`;
 - DSH Cordis Plugin and a patch that disables common host Shell/FS tools;
-- one-command installers for Kubernetes, OpenClaw and DSH;
+- Hermes Agent native Tool Plugin with official Plugin Doctor validation;
+- one-command installers for Kubernetes, OpenClaw, DSH and Hermes Agent;
 - Docker Compose for local development;
 - Helm chart, plain Kubernetes manifest, tests and release workflows;
 - append-only, redacted JSONL audit events.
@@ -76,9 +104,12 @@ Before installation, verify that:
 2. the Adapter can reach CubeAPI and CubeProxy;
 3. the target Runtime can reach the Adapter;
 4. `kubectl` and `helm` are installed for Kubernetes deployment;
-5. `openclaw` or `dsh` is installed for the corresponding plugin.
+5. `openclaw`, `dsh` or `hermes` is installed for the corresponding plugin.
 
 The installer never installs CubeSandbox itself.
+
+The Hermes path was tested with Hermes Agent 0.20.6 on macOS Apple Silicon and
+a CubeSandbox 0.7.0 Kubernetes lab cluster.
 
 ## Quick start: Kubernetes Adapter
 
@@ -116,7 +147,7 @@ Override the image, namespace or Secret when needed:
   --namespace my-agent-runtime \
   --release cube-adapter \
   --secret existing-adapter-secret \
-  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.1.0 \
+  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.2.0 \
   --cube-api-url https://cube-api.example.internal \
   --cube-api-port 443 \
   --cube-proxy-host cube-proxy.example.internal \
@@ -197,6 +228,35 @@ in one command:
 DSH's local `file:` installation copies the package into its plugin store.
 Re-run the install command after changing the plugin source; restarting DSH
 alone does not refresh a stale installed copy.
+
+## Quick start: Hermes Agent
+
+Install and configure the standalone native plugin in one command:
+
+```bash
+./scripts/install.sh hermes \
+  --adapter-url http://127.0.0.1:18080 \
+  --namespace agent-runtime \
+  --token-from-secret cube-adapter-auth
+```
+
+The installer downloads the plugin from this repository, enables it while
+explicitly denying built-in tool overrides, writes the Adapter URL, token-file
+path and `offline-code` profile to Hermes config, then runs the official Plugin
+Doctor in CI mode. Start a new restricted session afterward:
+
+```bash
+hermes -t cube-adapter
+```
+
+The plugin registers `cube_exec`, `cube_read`, `cube_write` and `cube_release`.
+With Hermes tool compression enabled, these tools may initially appear through
+the built-in `tool_describe` / `tool_call` catalog instead of being copied into
+the model prompt directly; this is expected and was covered by the real test.
+
+Loading the plugin does not globally disable Hermes' host terminal or file
+tools. Use the `cube-adapter` toolset for untrusted work and enforce the same
+restriction in the profile or gateway policy used by production sessions.
 
 ## Local Docker development
 
@@ -314,6 +374,12 @@ openclaw plugins disable cube-adapter-tools
 Review and remove the generated DSH patch from
 `${XDG_CONFIG_HOME:-$HOME/.config}/cubesandbox-agent-adapter` when uninstalling.
 
+Disable the Hermes integration before removing its plugin directory:
+
+```bash
+hermes plugins disable cube-adapter-tools
+```
+
 ## Security and current limits
 
 - Lease ownership is in process memory; the chart enforces one replica.
@@ -325,10 +391,26 @@ Review and remove the generated DSH patch from
   `shell/fs/pty` provider.
 - OpenClaw does not currently expose a stable generic fourth sandbox backend;
   this project uses its documented Tool Plugin interface.
+- Hermes host terminal/file tools remain independent of this plugin; use a
+  restricted toolset or profile when CubeSandbox must be the only executor.
 - Bearer auth should be combined with mTLS/workload identity, authorization,
   rate limits and centralized audit before production use.
 
 See [SECURITY.md](SECURITY.md) for reporting and deployment guidance.
+
+## CubeSandbox ecosystem
+
+CubeSandbox has an official, open
+[Agent integration guide program](https://github.com/TencentCloud/CubeSandbox/issues/244).
+It asks contributors to claim a framework, provide a runnable demo and document
+Cube-specific isolation, timeout and mount controls. Hermes Agent fits its
+`Others` category; this repository supplies the standalone plugin, bilingual
+README, real screenshots and runnable test path needed for an upstream guide.
+
+Additional official channels are
+[GitHub Discussions](https://github.com/tencentcloud/CubeSandbox/discussions),
+the [Cube 100 production-user program](https://github.com/TencentCloud/CubeSandbox/blob/master/docs/guide/cube100.md)
+and the Discord link maintained in the upstream README.
 
 ## Contributing
 
@@ -336,7 +418,7 @@ Issues and pull requests are welcome. Start with [CONTRIBUTING.md](CONTRIBUTING.
 and keep product-specific integrations behind the shared Adapter contract.
 
 This is a community project and is not an official Tencent Cloud, CubeSandbox,
-OpenClaw or DeepSeek project.
+OpenClaw, DeepSeek or Nous Research project.
 
 ## License
 

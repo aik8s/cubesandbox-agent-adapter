@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_IMAGE="ghcr.io/aik8s/cubesandbox-agent-adapter:v0.1.0"
+DEFAULT_IMAGE="ghcr.io/aik8s/cubesandbox-agent-adapter:v0.2.0"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -23,6 +23,7 @@ Usage:
   scripts/install.sh adapter --cube-api-url URL --cube-proxy-host HOST [options]
   scripts/install.sh openclaw --adapter-url URL (--token-file FILE | --token-from-secret NAME)
   scripts/install.sh dsh --adapter-url URL (--token-file FILE | --token-from-secret NAME) [options]
+  scripts/install.sh hermes --adapter-url URL (--token-file FILE | --token-from-secret NAME)
 
 Adapter options:
   --namespace NAME          Kubernetes namespace (default: agent-runtime)
@@ -38,9 +39,9 @@ Adapter options:
   --disable-network-policy  Disable the chart's default same-namespace policy
 
 The adapter command creates a strong Secret only when it does not already
-exist. It never prints the token. The OpenClaw and DSH commands require an
-existing read-only token file that is visible to the corresponding Runtime, or
-can export one from Kubernetes with --token-from-secret, --namespace and
+exist. It never prints the token. The OpenClaw, DSH and Hermes commands require
+an existing read-only token file that is visible to the corresponding Runtime,
+or can export one from Kubernetes with --token-from-secret, --namespace and
 optional --context.
 EOF
 }
@@ -299,6 +300,52 @@ EOF
   printf 'Start DSH with: dsh web --patch %q\n' "$patch_file"
 }
 
+install_hermes() {
+  local adapter_url=""
+  local token_file=""
+  local token_secret=""
+  local namespace="agent-runtime"
+  local context=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --adapter-url) adapter_url="${2:?}"; shift 2 ;;
+      --token-file) token_file="${2:?}"; shift 2 ;;
+      --token-from-secret) token_secret="${2:?}"; shift 2 ;;
+      --namespace) namespace="${2:?}"; shift 2 ;;
+      --context) context="${2:?}"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "unknown Hermes option: $1" ;;
+    esac
+  done
+  [[ -n "$adapter_url" ]] || die "--adapter-url is required"
+  if [[ -n "$token_file" && -n "$token_secret" ]]; then
+    die "use either --token-file or --token-from-secret"
+  fi
+  if [[ -n "$token_secret" ]]; then
+    token_file="${XDG_CONFIG_HOME:-$HOME/.config}/cubesandbox-agent-adapter/token"
+    token_from_secret "$namespace" "$token_secret" "$context" "$token_file"
+  fi
+  [[ -n "$token_file" ]] || die "--token-file or --token-from-secret is required"
+  validate_url "$adapter_url"
+  require_token_file "$token_file"
+  need hermes
+
+  token_file="$(cd "$(dirname "$token_file")" && pwd)/$(basename "$token_file")"
+  note "installing the Hermes Agent native Tool Plugin"
+  hermes plugins install \
+    aik8s/cubesandbox-agent-adapter/plugins/hermes \
+    --no-enable --force
+  hermes plugins enable cube-adapter-tools --no-allow-tool-override
+  hermes config set \
+    plugins.entries.cube-adapter-tools.settings.adapter_url "$adapter_url" >/dev/null
+  hermes config set \
+    plugins.entries.cube-adapter-tools.settings.token_file "$token_file" >/dev/null
+  hermes config set \
+    plugins.entries.cube-adapter-tools.settings.profile offline-code >/dev/null
+  hermes plugins doctor cube-adapter-tools --ci
+  note "Hermes integration installed; start a new Hermes session"
+}
+
 main() {
   local component="${1:-}"
   [[ -n "$component" ]] || { usage; exit 1; }
@@ -307,6 +354,7 @@ main() {
     adapter) install_adapter "$@" ;;
     openclaw) install_openclaw "$@" ;;
     dsh) install_dsh "$@" ;;
+    hermes) install_hermes "$@" ;;
     -h|--help|help) usage ;;
     *) die "unknown component: $component" ;;
   esac

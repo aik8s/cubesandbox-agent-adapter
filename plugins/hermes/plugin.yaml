@@ -1,0 +1,35 @@
+name: cube-adapter-tools
+version: "0.1.0"
+manifest_version: 2
+api_version: 1
+description: Route Hermes Agent shell and file work into a policy-controlled CubeSandbox MicroVM.
+author: aik8s
+license: Apache-2.0
+homepage: https://github.com/aik8s/cubesandbox-agent-adapter
+tags:
+  - sandbox
+  - microvm
+  - security
+  - cubesandbox
+provides_tools:
+  - cube_exec
+  - cube_read
+  - cube_write
+  - cube_release
+config_schema:
+  adapter_url:
+    type: str
+    default: http://127.0.0.1:18080
+    description: Cube Adapter base URL reachable from Hermes Agent.
+  token_file:
+    type: str
+    default: ""
+    description: Read-only file containing the Adapter bearer token.
+  token_env:
+    type: str
+    default: CUBE_ADAPTER_TOKEN
+    description: Environment variable containing the Adapter bearer token.
+  profile:
+    type: str
+    default: offline-code
+    description: Platform-owned Cube execution policy profile.

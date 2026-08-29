@@ -29,7 +29,7 @@ from urllib.parse import urlparse
 from cubesandbox import Sandbox
 
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 MAX_BODY_BYTES = 1024 * 1024
 MAX_COMMAND_BYTES = 16 * 1024
 MAX_FILE_BYTES = 256 * 1024
@@ -175,8 +175,12 @@ class CubeAdapter:
     def acquire(self, body: Dict[str, Any]) -> Dict[str, Any]:
         started = time.perf_counter()
         runtime = _required_string(body, "runtime", 32).lower()
-        if runtime not in {"openclaw", "dsh"}:
-            raise AdapterError(400, "invalid_runtime", "runtime must be openclaw or dsh")
+        if runtime not in {"openclaw", "dsh", "hermes"}:
+            raise AdapterError(
+                400,
+                "invalid_runtime",
+                "runtime must be openclaw, dsh or hermes",
+            )
         session_key = _required_string(body, "session_key", 512)
         # Session identifiers can be predictable. Use a keyed digest so an
         # audit-log reader cannot cheaply recover them with a dictionary.

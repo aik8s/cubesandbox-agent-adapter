@@ -139,6 +139,24 @@ class AdapterHttpTest(unittest.TestCase):
             self.post(f"/v1/leases/{lease}/read", {"path": "/workspace/../etc/shadow"})
         self.assertEqual(traversal.exception.code, 403)
 
+    def test_hermes_runtime_is_isolated_from_other_runtime_sessions(self):
+        hermes = self.post(
+            "/v1/leases/acquire",
+            {"runtime": "hermes", "session_key": "shared-session"},
+        )
+        openclaw = self.post(
+            "/v1/leases/acquire",
+            {"runtime": "openclaw", "session_key": "shared-session"},
+        )
+        self.assertNotEqual(hermes["lease_ref"], openclaw["lease_ref"])
+        self.assertEqual(len(FakeSandbox.created), 2)
+
+        self.post(f"/v1/leases/{hermes['lease_ref']}/release", {"action": "kill"})
+        self.post(f"/v1/leases/{openclaw['lease_ref']}/release", {"action": "kill"})
+
+        rows = [json.loads(line) for line in self.audit_path.read_text().splitlines()]
+        self.assertIn("hermes", {row["runtime"] for row in rows})
+
 
 if __name__ == "__main__":
     unittest.main()

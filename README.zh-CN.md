@@ -2,28 +2,28 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-这是一个社区集成项目，用于把 OpenClaw 和 DeepSeek Harness（DSH）的工具
-调用，经受控策略路由到 [CubeSandbox](https://github.com/TencentCloud/CubeSandbox)
-MicroVM 中执行。
+这是一个社区集成项目，用于把 OpenClaw、DeepSeek Harness（DSH）和 Hermes
+Agent 的工具调用，经受控策略路由到
+[CubeSandbox](https://github.com/TencentCloud/CubeSandbox) MicroVM 中执行。
 
 ```text
 OpenClaw Tool Plugin ─┐
-                     ├─ 认证 HTTP ─→ Adapter ─→ Cube SDK ─→ MicroVM
-DSH Cordis Plugin ───┘                          │
-                                               └─ 脱敏 JSONL 审计
+DSH Cordis Plugin ────┼─ 认证 HTTP ─→ Adapter ─→ Cube SDK ─→ MicroVM
+Hermes Tool Plugin ───┘                          │
+                                                └─ 脱敏 JSONL 审计
 ```
 
 Adapter 是唯一持有 Cube 连接配置、完整 Sandbox ID 和流量令牌的组件。Runtime
 插件只获得不透明租约；返回给模型的是短 Sandbox 引用，不包含底层凭据。
 
-> **项目状态：** `v0.1.0` 是已经跑通的参考实现，但还不是可直接承载生产多租户
+> **项目状态：** `v0.2.0` 是已经跑通的参考实现，但还不是可直接承载生产多租户
 > 的控制面。向不可信用户开放前，请先阅读[安全边界与当前限制](#安全边界与当前限制)。
 
 ## 实战证据
 
-下面不是产品效果图，而是 OpenClaw、DSH、Adapter 和 Kubernetes 上的
-CubeSandbox 实际联调截图。它们证明的是一次功能实验已经跑通，不代表性能基准或
-生产就绪。
+下面不是产品效果图，而是 OpenClaw、DSH、Hermes Agent、Adapter 和
+Kubernetes 上的 CubeSandbox 实际联调截图。它们证明的是一次功能实验已经跑通，
+不代表性能基准或生产就绪。
 
 ### OpenClaw 直接调用 Adapter
 
@@ -55,6 +55,30 @@ OpenClaw 与 DSH 的操作。它不记录命令正文、输出、令牌或完整
 
 ![Cube Adapter 中的 OpenClaw 与 DSH 脱敏审计事件](docs/assets/readme/adapter-audit.jpg)
 
+### Hermes Agent 原生插件实战
+
+Hermes 接入采用独立的原生 Tool Plugin，不修改 Hermes 核心代码。Hermes 0.20.6
+官方 Dashboard 显示 `cube-adapter-tools` 来自用户插件目录，状态为 `enabled`，并且
+安装时显式拒绝覆盖内置工具：
+
+![Hermes Agent 中已启用的 CubeSandbox 原生插件](docs/assets/readme/hermes-plugin-enabled.jpg)
+
+本次实战会话共有 8 条消息、3 次工具调用。Hermes 默认会压缩工具目录，延迟加载的
+插件工具可能先通过 `tool_describe` 与 `tool_call` 暴露给模型，最终仍会落到插件的
+`cube_exec` 和 `cube_release` Handler：
+
+![Hermes Agent 调用 CubeSandbox 的会话与工具记录](docs/assets/readme/hermes-session-tools.jpg)
+
+60 秒命令执行期间，CubeSandbox WebUI 出现同一条 `3b287c...` MicroVM，状态为
+`running`，规格为 2C/2GiB：
+
+![Hermes 触发的 CubeSandbox MicroVM 正在运行](docs/assets/readme/hermes-cubesandbox-live.jpg)
+
+命令结束后，审计页使用相同短引用 `3b287c8f` 串起 `acquire`、`exec` 与
+`release`；Runtime 为 `hermes`，结果均为 `ok`，活动租约归零：
+
+![Hermes 调用 CubeSandbox 的完整脱敏审计链](docs/assets/readme/hermes-adapter-audit.jpg)
+
 验收时不要只看 Agent 最终回复。建议同时核对以下证据链：
 
 ```text
@@ -72,7 +96,8 @@ Agent 工具结果中的 sandbox_ref
 - 默认拒绝公网的 `offline-code` 固定策略；
 - OpenClaw Tool Plugin：`cube_exec`、`cube_read`、`cube_write`、`cube_release`；
 - DSH Cordis Plugin，以及禁用常见宿主 Shell/FS 工具的 Profile Patch；
-- Kubernetes、OpenClaw 和 DSH 一键安装脚本；
+- 通过官方 Plugin Doctor 校验的 Hermes Agent 原生 Tool Plugin；
+- Kubernetes、OpenClaw、DSH 和 Hermes Agent 一键安装脚本；
 - 本地开发用 Docker Compose；
 - Helm Chart、纯 Kubernetes Manifest、测试和镜像发布流水线；
 - 追加写入、默认脱敏的 JSONL 审计事件。
@@ -83,12 +108,15 @@ Agent 工具结果中的 sandbox_ref
 
 1. CubeSandbox 已经运行，且 `agent-code` 一类模板 alias 处于 `READY`；
 2. Adapter 能访问 CubeAPI 和 CubeProxy；
-3. 目标 OpenClaw 或 DSH Runtime 能访问 Adapter；
+3. 目标 OpenClaw、DSH 或 Hermes Runtime 能访问 Adapter；
 4. 部署到 Kubernetes 时已经安装 `kubectl` 和 `helm`；
-5. 安装对应插件时已经安装 `openclaw` 或 `dsh`。
+5. 安装对应插件时已经安装 `openclaw`、`dsh` 或 `hermes`。
 
 安装器不会安装 CubeSandbox 本身。Kubernetes 节点的 KVM、XFS、bpffs、CNI、
 存储和权限要求，请先阅读[部署条件与生产评估](https://aik8s.run/ai-k8s/rag-agent/cubesandbox-kubernetes/)。
+
+Hermes 路径已在 macOS Apple Silicon 的 Hermes Agent 0.20.6 与 CubeSandbox
+0.7.0 Kubernetes 实验集群上完成真实联调。
 
 ## 一键部署 Kubernetes Adapter
 
@@ -126,7 +154,7 @@ cd cubesandbox-agent-adapter
   --namespace my-agent-runtime \
   --release cube-adapter \
   --secret existing-adapter-secret \
-  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.1.0 \
+  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.2.0 \
   --cube-api-url https://cube-api.example.internal \
   --cube-api-port 443 \
   --cube-proxy-host cube-proxy.example.internal \
@@ -205,6 +233,34 @@ kubectl -n agent-runtime port-forward \
 
 DSH 的本地 `file:` 安装会把包复制到插件目录。插件源代码变化后要重新执行安装
 命令；只重启 DSH 不会刷新旧副本。
+
+## 一键接入 Hermes Agent
+
+一条命令安装并配置独立的 Hermes 原生插件：
+
+```bash
+./scripts/install.sh hermes \
+  --adapter-url http://127.0.0.1:18080 \
+  --namespace agent-runtime \
+  --token-from-secret cube-adapter-auth
+```
+
+安装器会从本仓库下载插件、在明确拒绝覆盖 Hermes 内置工具的前提下启用它，写入
+Adapter 地址、Token 文件路径和 `offline-code` Profile，然后以 CI 模式运行官方
+Plugin Doctor。安装后启动一个新的受限会话：
+
+```bash
+hermes -t cube-adapter
+```
+
+插件注册 `cube_exec`、`cube_read`、`cube_write` 与 `cube_release`。启用 Hermes
+工具压缩时，这些工具可能不会直接塞进模型 Prompt，而是先出现在内置的
+`tool_describe` / `tool_call` 延迟目录中；这是正常行为，本仓库的真实联调已经覆盖
+了这条路径。
+
+安装插件不会全局关闭 Hermes 自带的宿主 Terminal 或文件工具。处理不可信任务时，
+应使用 `cube-adapter` Toolset，并在生产会话所用 Profile 或 Gateway 策略中落实同样
+的限制。
 
 ## 本地 Docker 开发
 
@@ -321,6 +377,12 @@ openclaw plugins disable cube-adapter-tools
 卸载 DSH 集成时，请检查并删除
 `${XDG_CONFIG_HOME:-$HOME/.config}/cubesandbox-agent-adapter` 下生成的 Patch。
 
+删除 Hermes 插件目录前先禁用集成：
+
+```bash
+hermes plugins disable cube-adapter-tools
+```
+
 ## 安全边界与当前限制
 
 - 租约归属只保存在进程内存中，因此 Chart 强制单副本；
@@ -329,9 +391,24 @@ openclaw plugins disable cube-adapter-tools
 - DSH 当前暴露 `cube_*` 工具，还不是透明的原生 `shell/fs/pty` Provider；
 - OpenClaw 当前没有稳定的通用第四种 Sandbox Backend，本项目使用公开的 Tool
   Plugin 接口；
+- Hermes 的宿主 Terminal/文件工具与本插件相互独立；CubeSandbox 必须作为唯一
+  执行器时，要使用受限 Toolset 或 Profile；
 - 生产前应在 Bearer 认证之外增加 mTLS/工作负载身份、授权、限流和集中审计。
 
 漏洞报告和部署建议见 [SECURITY.md](SECURITY.md)。
+
+## CubeSandbox 官方生态入口
+
+CubeSandbox 官方正在通过
+[Agent 集成指南征集 Issue](https://github.com/TencentCloud/CubeSandbox/issues/244)
+建设 Integrations 目录。贡献要求包括认领框架、可运行 Demo，以及网络隔离、超时和
+挂载等 Cube 特性说明。Hermes Agent 可作为 `Others` 类型提交；本仓库已经具备独立
+插件、中英文 README、真实截图和可复现测试链路，可直接作为上游集成指南的基础。
+
+其他官方渠道包括
+[GitHub Discussions](https://github.com/tencentcloud/CubeSandbox/discussions)、
+[Cube 100 生产用户计划](https://github.com/TencentCloud/CubeSandbox/blob/master/docs/guide/cube100.md)，
+以及上游 README 持续维护的 Discord 入口。
 
 ## aik8s.run 延伸阅读
 
@@ -345,8 +422,8 @@ openclaw plugins disable cube-adapter-tools
 欢迎 Issue 和 Pull Request。请先阅读 [CONTRIBUTING.md](CONTRIBUTING.md)，并把
 产品专属逻辑放在共享 Adapter 契约之后。
 
-这是社区项目，并非 Tencent Cloud、CubeSandbox、OpenClaw 或 DeepSeek 的官方
-项目。
+这是社区项目，并非 Tencent Cloud、CubeSandbox、OpenClaw、DeepSeek 或 Nous
+Research 的官方项目。
 
 ## 许可证
 

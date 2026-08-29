@@ -1,6 +1,6 @@
 services:
   adapter:
-    image: ghcr.io/aik8s/cubesandbox-agent-adapter:v0.1.0
+    image: ghcr.io/aik8s/cubesandbox-agent-adapter:v0.2.0
     build:
       context: ./adapter
     env_file:
