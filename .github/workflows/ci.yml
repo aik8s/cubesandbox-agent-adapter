@@ -12,22 +12,22 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: adapter/requirements.txt
       - run: pip install -r adapter/requirements.txt
       - run: python -m unittest -v adapter/test_cube_adapter.py
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - run: node --check plugins/openclaw/index.js
       - run: node --check plugins/dsh/index.js
       - run: node plugins/dsh/test-plugin.mjs
       - run: bash tests/test_install.sh
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
       - run: helm lint charts/cubesandbox-agent-adapter
       - run: helm template test charts/cubesandbox-agent-adapter >/dev/null
       - run: bash -n scripts/install.sh scripts/dev-up.sh
