@@ -1,0 +1,16 @@
+[
+  {
+    "token": "replace-with-at-least-24-random-characters",
+    "tenant_id": "team-a",
+    "subject": "team-a-runtime",
+    "roles": ["runtime"],
+    "allowed_profiles": ["offline-code", "persistent-code"],
+    "allowed_runtimes": ["openclaw", "dsh", "hermes", "mcp"]
+  },
+  {
+    "token": "replace-with-a-different-random-admin-token",
+    "tenant_id": "platform",
+    "subject": "platform-operator",
+    "roles": ["runtime", "admin"]
+  }
+]

@@ -33,7 +33,21 @@ try {
   );
   process.env.TEST_CUBE_TOKEN = "redacted-test-token";
 
-  assert.deepEqual(tools.map((value) => value.name), ["cube_exec", "cube_read", "cube_write", "cube_release"]);
+  assert.deepEqual(tools.map((value) => value.name), [
+    "cube_exec",
+    "cube_status",
+    "cube_read",
+    "cube_write",
+    "cube_list",
+    "cube_job_start",
+    "cube_job_status",
+    "cube_job_output",
+    "cube_job_cancel",
+    "cube_checkpoint",
+    "cube_rollback",
+    "cube_fork",
+    "cube_release",
+  ]);
   assert.equal(prompts.length, 1);
   const result = await tools[0].execute(
     { command: "printf remote-ok" },

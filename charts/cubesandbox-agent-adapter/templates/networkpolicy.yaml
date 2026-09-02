@@ -18,6 +18,9 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.service.port }}
+    {{- with .Values.networkPolicy.extraIngress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
   egress:
     - to:
         - namespaceSelector:
@@ -37,4 +40,31 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
+    {{- if .Values.state.enabled }}
+    - to:
+        {{- if .Values.networkPolicy.redisNamespace }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.redisNamespace }}
+          {{- with .Values.networkPolicy.redisPodSelector }}
+          podSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+          {{- end }}
+        {{- else }}
+        {{- with .Values.networkPolicy.redisPodSelector }}
+        - podSelector:
+            matchLabels:
+              {{- toYaml . | nindent 14 }}
+        {{- else }}
+        - podSelector: {}
+        {{- end }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.redisPort }}
+    {{- end }}
+    {{- with .Values.networkPolicy.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
 {{- end }}

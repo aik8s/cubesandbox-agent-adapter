@@ -53,6 +53,8 @@ CUBE_ADAPTER_TOKEN=$(openssl rand -hex 32)
 CUBE_ADAPTER_HMAC_KEY=$(openssl rand -hex 32)
 CUBE_ADAPTER_AUDIT_LOG=/var/log/cube-adapter/audit.jsonl
 CUBE_ADAPTER_AUDIT_UI=0
+CUBE_ADAPTER_AUDIT_SINKS=file
+CUBE_ADAPTER_PROFILES_FILE=/etc/cube-adapter/profiles.yaml
 CUBE_TEMPLATE_ID=$template_id
 CUBE_API_URL=$cube_api_url
 CUBE_PROXY_NODE_IP=$proxy_host
@@ -62,4 +64,4 @@ chmod 600 "$env_file"
 
 docker compose -f "$ROOT_DIR/compose.yaml" up -d --build
 printf 'Adapter is starting on http://127.0.0.1:18080\n'
-printf 'Health check: curl -fsS http://127.0.0.1:18080/healthz\n'
+printf 'Readiness check: curl -fsS http://127.0.0.1:18080/readyz\n'

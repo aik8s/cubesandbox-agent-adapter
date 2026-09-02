@@ -2,10 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "type": "object",
   "properties": {
-    "replicaCount": { "type": "integer", "minimum": 1, "maximum": 1 },
+    "replicaCount": { "type": "integer", "minimum": 1, "maximum": 10 },
     "image": {
       "type": "object",
-      "required": ["repository", "tag"],
+      "required": ["repository", "tag", "pullPolicy"],
       "properties": {
         "repository": { "type": "string", "minLength": 1 },
         "tag": { "type": "string", "minLength": 1 },
@@ -14,11 +14,35 @@
     },
     "auth": {
       "type": "object",
-      "required": ["existingSecret", "tokenKey", "hmacKey"],
+      "required": ["existingSecret", "sharedTokenEnabled", "tokenKey", "hmacKey"],
       "properties": {
         "existingSecret": { "type": "string", "minLength": 1 },
+        "sharedTokenEnabled": { "type": "boolean" },
         "tokenKey": { "type": "string", "minLength": 1 },
-        "hmacKey": { "type": "string", "minLength": 1 }
+        "hmacKey": { "type": "string", "minLength": 1 },
+        "tokenPrincipalsKey": { "type": "string" }
+      }
+    },
+    "oidc": {
+      "type": "object",
+      "properties": {
+        "jwksUrl": { "type": "string" },
+        "issuer": { "type": "string" },
+        "audience": { "type": "string" },
+        "tenantClaim": { "type": "string", "minLength": 1 },
+        "rolesClaim": { "type": "string", "minLength": 1 }
+      }
+    },
+    "tls": {
+      "type": "object",
+      "required": ["enabled"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "existingSecret": { "type": "string" },
+        "certKey": { "type": "string", "minLength": 1 },
+        "privateKeyKey": { "type": "string", "minLength": 1 },
+        "clientCaKey": { "type": "string" },
+        "trustClientCertSubject": { "type": "boolean" }
       }
     },
     "cube": {
@@ -28,8 +52,135 @@
         "apiUrl": { "type": "string", "pattern": "^https?://" },
         "proxyHost": { "type": "string", "minLength": 1 },
         "proxyPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
-        "templateId": { "type": "string", "minLength": 1 }
+        "templateId": { "type": "string", "minLength": 1 },
+        "existingSecret": { "type": "string" },
+        "apiKeyKey": { "type": "string", "minLength": 1 }
+      }
+    },
+    "profiles": {
+      "type": "object",
+      "required": ["existingConfigMap", "key", "data"],
+      "properties": {
+        "existingConfigMap": { "type": "string" },
+        "key": { "type": "string", "minLength": 1 },
+        "data": { "type": "object" }
+      }
+    },
+    "state": {
+      "type": "object",
+      "required": ["enabled", "existingSecret", "redisUrlKey", "encryptionKeyKey"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "redisUrl": { "type": "string" },
+        "existingSecret": { "type": "string", "minLength": 1 },
+        "redisUrlKey": { "type": "string", "minLength": 1 },
+        "encryptionKeyKey": { "type": "string", "minLength": 1 },
+        "prefix": { "type": "string", "minLength": 1 },
+        "gcIntervalSeconds": { "type": "integer", "minimum": 1 },
+        "lockTtlSeconds": { "type": "integer", "minimum": 30 }
+      }
+    },
+    "audit": {
+      "type": "object",
+      "required": ["sinks", "persistence"],
+      "properties": {
+        "sinks": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "enum": ["file", "stdout", "http"] }
+        },
+        "httpUrl": { "type": "string" },
+        "httpTokenSecret": { "type": "string" },
+        "httpTokenKey": { "type": "string", "minLength": 1 },
+        "persistence": {
+          "type": "object",
+          "required": ["enabled", "accessModes", "size"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "existingClaim": { "type": "string" },
+            "storageClass": { "type": "string" },
+            "accessModes": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+            "size": { "type": "string", "pattern": "^[0-9]+(Ki|Mi|Gi|Ti)$" }
+          }
+        }
       }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "tls": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "tls": {
+            "properties": { "existingSecret": { "minLength": 1 } },
+            "required": ["existingSecret"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "tls": {
+            "properties": { "trustClientCertSubject": { "const": true } },
+            "required": ["trustClientCertSubject"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "tls": {
+            "properties": {
+              "enabled": { "const": true },
+              "clientCaKey": { "minLength": 1 }
+            },
+            "required": ["enabled", "clientCaKey"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "oidc": {
+            "properties": { "jwksUrl": { "minLength": 1 } },
+            "required": ["jwksUrl"]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "oidc": {
+            "properties": {
+              "issuer": { "minLength": 1 },
+              "audience": { "minLength": 1 }
+            },
+            "required": ["issuer", "audience"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "replicaCount": { "minimum": 2 } },
+        "required": ["replicaCount"]
+      },
+      "then": {
+        "properties": {
+          "state": {
+            "properties": { "enabled": { "const": true } },
+            "required": ["enabled"]
+          }
+        }
+      }
+    }
+  ]
 }

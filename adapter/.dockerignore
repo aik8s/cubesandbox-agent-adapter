@@ -1,0 +1,5 @@
+__pycache__/
+*.py[cod]
+test_*.py
+test_support.py
+requirements-dev.txt

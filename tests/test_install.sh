@@ -92,7 +92,8 @@ EXPORTED_TOKEN="$TEST_DIR/config/cubesandbox-agent-adapter/token"
 test "$(cat "$EXPORTED_TOKEN")" = 'test-token-from-kubernetes-secret'
 
 grep -F 'config set plugins.allow ["existing-plugin","cube-adapter-tools"] --strict-json' "$TEST_CALLS" >/dev/null
-grep -F 'config set tools.alsoAllow ["existing-tool","cube_exec","cube_read","cube_write","cube_release"] --strict-json' "$TEST_CALLS" >/dev/null
+grep -F 'plugins install ' "$TEST_CALLS" | grep -F -- '--force --accept-capabilities' >/dev/null
+grep -F 'config set tools.alsoAllow ["existing-tool","cube_exec","cube_status","cube_read","cube_write","cube_list","cube_job_start","cube_job_status","cube_job_output","cube_job_cancel","cube_checkpoint","cube_rollback","cube_fork","cube_release"] --strict-json' "$TEST_CALLS" >/dev/null
 grep -F 'config validate' "$TEST_CALLS" >/dev/null
 
 "$ROOT_DIR/scripts/install.sh" dsh \

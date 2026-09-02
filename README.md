@@ -2,28 +2,51 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-Community integration that routes OpenClaw, DeepSeek Harness (DSH) and Hermes
-Agent tool calls into policy-controlled
+Community integration that routes OpenClaw, DeepSeek Harness (DSH), Hermes
+Agent and MCP hosts such as Codex into policy-controlled
 [CubeSandbox](https://github.com/TencentCloud/CubeSandbox) MicroVMs.
 
 ```text
-OpenClaw Tool Plugin ─┐
-DSH Cordis Plugin ────┼─ authenticated HTTP ─→ Adapter ─→ Cube SDK ─→ MicroVM
-Hermes Tool Plugin ───┘                              │
-                                                    └─ redacted JSONL audit
+OpenClaw Tool Plugin ──────────┐
+DSH Cordis Plugin ─────────────┤
+Hermes Tool Plugin ────────────┼─ authenticated HTTP ─→ Adapter ─→ Cube SDK ─→ MicroVM
+Codex / MCP host ─→ MCP stdio ─┘                              │
+                                                            └─ redacted JSONL audit
 ```
 
 The Adapter is the only component that holds Cube connection settings, full
 Sandbox IDs and traffic tokens. Runtime plugins receive opaque leases and
 return only short Sandbox references to the model.
 
-> **Project status:** v0.2.0 is a working reference implementation, not a
-> production-ready multi-tenant control plane. Read [Security and current
-> limits](#security-and-current-limits) before exposing it to untrusted users.
+> **Project status:** v0.3.0 is a production-oriented reference implementation.
+> It supports durable encrypted leases and multi-tenant policy, but still
+> requires deployment-specific hardening and acceptance tests in every target
+> CubeSandbox environment.
+
+## CubeSandbox and Kubernetes
+
+CubeSandbox is the sandbox execution system; Kubernetes is an optional platform
+for deploying and operating that system. CubeSandbox does **not** require
+Kubernetes: its official [one-click and bare-metal deployment](https://github.com/TencentCloud/CubeSandbox/blob/master/docs/guide/bare-metal-deploy.md)
+runs the control and compute services on Linux under systemd, with supporting
+containers where needed.
+
+Kubernetes becomes valuable when a deployment has multiple control or compute
+nodes and needs standard scheduling, declarative configuration, health probes,
+rolling operations, Secret delivery, NetworkPolicy and observability. The
+official [Kubernetes deployment](https://github.com/TencentCloud/CubeSandbox/blob/master/docs/guide/kubernetes/index.md)
+uses Deployments for control-plane services and DaemonSets for compute nodes.
+It does not remove the underlying virtualization, kernel, storage and network
+requirements, and upstream still documents compute-node upgrade limitations.
+
+This repository follows the same separation: the Adapter can run directly or
+with Compose against any reachable CubeAPI/CubeProxy. Its Helm chart adds
+Kubernetes lifecycle, policy, Secret and HA integration. Kubernetes is an
+operations choice, not an SDK dependency.
 
 ## Hands-on evidence
 
-The following screenshots come from real OpenClaw, DSH and Hermes Agent
+The following screenshots come from real OpenClaw, DSH, Hermes Agent and Codex
 sessions connected to a Kubernetes-hosted CubeSandbox deployment. They are
 evidence from a functional lab run, not a benchmark or a production-readiness
 claim.
@@ -76,6 +99,52 @@ reference across `acquire`, `exec` and `release`, with runtime `hermes`, an
 
 ![Hermes CubeSandbox acquire exec release audit trail](docs/assets/readme/hermes-adapter-audit.jpg)
 
+### v0.3.0 four-client application acceptance
+
+On 2026-09-02, the v0.3.0 Adapter was deployed to a Kubernetes acceptance
+environment and exercised from the actual OpenClaw, DSH, Hermes Agent and Codex
+applications. These are light-theme product screenshots, not reconstructed
+evidence cards. The Adapter deployment was `1/1` ready with zero container
+restarts; every run ended with `cube_release(action=kill)`, and the Adapter
+reported zero active leases afterward.
+
+| Client | Verified path | Result |
+| --- | --- | --- |
+| OpenClaw | Tool Plugin → Adapter → CubeSandbox | `cube_exec`, status and release succeeded |
+| DSH | Cordis Plugin → Adapter → CubeSandbox | `cube_exec`, status and release succeeded |
+| Hermes Agent | Native Tool Plugin → Adapter → CubeSandbox | the four surfaced core tools completed execution and release; `cube_exec` supplied the status probe |
+| Codex | MCP stdio facade → Adapter → CubeSandbox | acquire, exec, status and release succeeded |
+
+OpenClaw executed `OPENCLAW_APP_CUBESANDBOX_OK`, inspected the lease and destroyed
+the MicroVM from its real Control UI:
+
+![OpenClaw application using CubeSandbox in light mode](docs/assets/v0.3-acceptance/10-openclaw-application.jpg)
+
+DSH executed `DSH_APP_CUBESANDBOX_OK` through the Cordis Plugin and completed the
+same status and cleanup path from DSH Web:
+
+![DSH application using CubeSandbox in light mode](docs/assets/v0.3-acceptance/11-dsh-application.png)
+
+Hermes Agent executed `HERMES_APP_CUBESANDBOX_OK` from its official dashboard.
+The isolated installation used for this screenshot surfaced the four core tools
+`cube_exec`, `cube_read`, `cube_write` and `cube_release`, so the model used a
+second `cube_exec` as its status probe. The current v0.3.0 source declares the
+13-tool plugin surface, but this image proves only the captured execution and
+release path rather than every Hermes tool:
+
+![Hermes Agent application using CubeSandbox in light mode](docs/assets/v0.3-acceptance/12-hermes-application.png)
+
+Codex used the Adapter's stdio MCP facade with only `cube_acquire`, `cube_exec`,
+`cube_status` and `cube_release` enabled. It executed
+`CODEX_APP_CUBESANDBOX_OK`, observed the running lease and destroyed it:
+
+![Codex application using CubeSandbox through MCP in light mode](docs/assets/v0.3-acceptance/13-codex-application.png)
+
+The screenshots expose no bearer token, gateway address, full Sandbox ID or
+private cluster identifier. The Hermes local path and session identifier are
+visibly redacted. Model-provider credentials remained environment references
+and were not written into the repository.
+
 For the full environment, commands, limitations and evidence, read the
 following Chinese articles on [aik8s.run](https://aik8s.run/):
 
@@ -87,14 +156,22 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
 ## What is included
 
 - authenticated Python Adapter using `cubesandbox==0.7.0`;
-- fail-closed `offline-code` policy;
-- OpenClaw Tool Plugin: `cube_exec`, `cube_read`, `cube_write`, `cube_release`;
+- fail-closed declarative profiles with persistent-volume and checkpoint gates;
+- OpenClaw, DSH and Hermes plugins with 13 compatible execution, file, async
+  job and checkpoint tools, plus an MCP facade for hosts such as Codex;
 - DSH Cordis Plugin and a patch that disables common host Shell/FS tools;
 - Hermes Agent native Tool Plugin with official Plugin Doctor validation;
 - one-command installers for Kubernetes, OpenClaw, DSH and Hermes Agent;
 - Docker Compose for local development;
 - Helm chart, plain Kubernetes manifest, tests and release workflows;
+- Redis-backed encrypted recovery and multi-replica distributed locking;
+- per-tenant bearer, OIDC and TLS/mTLS authentication;
+- Prometheus metrics, dependency-aware readiness and pluggable audit sinks;
+- an official-SDK MCP stdio facade;
 - append-only, redacted JSONL audit events.
+
+The current release and issue assessment is tracked in
+[CubeSandbox upstream status](docs/cubesandbox-upstream.md).
 
 ## Prerequisites
 
@@ -105,6 +182,7 @@ Before installation, verify that:
 3. the target Runtime can reach the Adapter;
 4. `kubectl` and `helm` are installed for Kubernetes deployment;
 5. `openclaw`, `dsh` or `hermes` is installed for the corresponding plugin.
+6. local Python development and the MCP facade use Python 3.10 or newer.
 
 The installer never installs CubeSandbox itself.
 
@@ -147,7 +225,7 @@ Override the image, namespace or Secret when needed:
   --namespace my-agent-runtime \
   --release cube-adapter \
   --secret existing-adapter-secret \
-  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.2.0 \
+  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.3.0 \
   --cube-api-url https://cube-api.example.internal \
   --cube-api-port 443 \
   --cube-proxy-host cube-proxy.example.internal \
@@ -214,8 +292,8 @@ Install the Cordis Plugin and generate a mode-0600 patch in one command:
 ```
 
 The generated patch disables `tool-bash`, `tool-pwsh`, `tool-fs`,
-`tool-fs-search` and `tool-str-replace-editor`, then registers the four Cube
-tools. Start DSH with the command printed by the installer, or install and start
+`tool-fs-search` and `tool-str-replace-editor`, then registers the Cube tool
+suite. Start DSH with the command printed by the installer, or install and start
 in one command:
 
 ```bash
@@ -274,7 +352,9 @@ curl -fsS http://127.0.0.1:18080/healthz
 
 The script creates a mode-0600 `.env`, refuses to overwrite it by default and
 binds the Adapter only to `127.0.0.1`. Use `--force` only when intentionally
-rotating both development secrets. The Compose audit directory is ephemeral.
+rotating both development secrets. Compose stores audit data in a named volume.
+Add `--profile ha` and configure Redis state variables in `.env` when testing
+restart recovery.
 
 For manual Docker setup:
 
@@ -287,14 +367,11 @@ docker compose up -d --build
 
 ## API contract
 
-```text
-GET  /healthz
-POST /v1/leases/acquire
-POST /v1/leases/{lease_ref}/exec
-POST /v1/leases/{lease_ref}/read
-POST /v1/leases/{lease_ref}/write
-POST /v1/leases/{lease_ref}/release
-```
+The API includes health/readiness/metrics, tenant-scoped leases, typed file and
+binary artifact operations, synchronous execution, durable jobs with SSE and
+cancellation, interactive PTYs, persistent workspaces, and gated
+checkpoint/rollback/fork operations. See the complete
+[OpenAPI contract](docs/openapi.yaml).
 
 Every `POST` requires `Authorization: Bearer …`. `acquire` is idempotent per
 `(runtime, HMAC-SHA-256(session_key))`. The HMAC key is deliberately independent
@@ -304,6 +381,36 @@ session correlation.
 The model cannot choose a template, CIDR, public-traffic setting or lifecycle
 policy. Paths are restricted to `/workspace` and `/tmp`; request, command, file,
 output and timeout sizes are bounded.
+
+## MCP stdio facade
+
+The MCP process is intentionally a local stdio client of the authenticated
+Adapter API. A typical MCP host configuration is:
+
+```json
+{
+  "mcpServers": {
+    "cubesandbox": {
+      "command": "/absolute/path/to/.venv/bin/python",
+      "args": ["-m", "adapter.mcp_server"],
+      "env": {
+        "PYTHONPATH": "/absolute/path/to/cubesandbox-agent-adapter",
+        "CUBE_ADAPTER_URL": "https://adapter.example.internal",
+        "CUBE_ADAPTER_PROFILE": "offline-code",
+        "CUBE_ADAPTER_TOKEN_FILE": "/run/secrets/cube-adapter/token",
+        "CUBE_ADAPTER_CA_FILE": "/run/secrets/cube-adapter/ca.crt"
+      }
+    }
+  }
+}
+```
+
+Plain HTTP is accepted only for loopback Adapter URLs, preventing accidental
+remote bearer-token disclosure. For an mTLS-only Adapter, omit the token
+variables and set `CUBE_ADAPTER_CLIENT_CERT_FILE` plus
+`CUBE_ADAPTER_CLIENT_KEY_FILE`; `CUBE_ADAPTER_CA_FILE` continues to verify the
+server certificate. The host-owned `CUBE_ADAPTER_PROFILE` is deliberately not
+exposed as a model-selected tool argument.
 
 ## Audit
 
@@ -323,16 +430,36 @@ JSONL events to a durable, access-controlled pipeline in real deployments.
 
 | Variable | Required | Purpose |
 | --- | --- | --- |
-| `CUBE_ADAPTER_TOKEN` | yes | Runtime-to-Adapter bearer token |
+| `CUBE_ADAPTER_TOKEN` | one auth method | shared Runtime-to-Adapter bearer token |
+| `CUBE_ADAPTER_TOKENS_FILE` | one auth method | per-tenant bearer principals JSON |
+| `CUBE_ADAPTER_OIDC_JWKS_URL` | one auth method | OIDC JWKS endpoint |
 | `CUBE_ADAPTER_HMAC_KEY` | yes | independent session pseudonymization key |
 | `CUBE_TEMPLATE_ID` | yes | platform-owned READY template alias |
 | `CUBE_API_URL` | yes | CubeAPI address visible to the Adapter |
+| `CUBE_API_KEY` | when enabled | CubeAPI credential, never exposed to plugins |
 | `CUBE_PROXY_NODE_IP` | yes | CubeProxy host visible to the Adapter |
 | `CUBE_PROXY_PORT_HTTP` | yes | CubeProxy HTTP port |
 | `CUBE_ADAPTER_AUDIT_LOG` | no | JSONL path; defaults to local file |
 | `CUBE_ADAPTER_AUDIT_UI` | no | set `1` only on a protected test network |
+| `CUBE_ADAPTER_PROFILES_FILE` | no | declarative operator-owned YAML profiles |
+| `CUBE_ADAPTER_STATE_BACKEND_URL` | HA/recovery | `redis://` or `rediss://` URL |
+| `CUBE_ADAPTER_STATE_ENCRYPTION_KEY` | with Redis | Fernet key for persisted records |
+| `CUBE_ADAPTER_AUDIT_SINKS` | no | comma list of `file`, `stdout`, `http` |
+| `CUBE_ADAPTER_TLS_CERT_FILE` | no | HTTPS server certificate |
+| `CUBE_ADAPTER_TLS_CLIENT_CA_FILE` | no | require and validate mTLS clients |
 | `CUBE_ADAPTER_SANDBOX_TIMEOUT` | no | Sandbox timeout; default 300 seconds |
 | `CUBE_ADAPTER_MAX_COMMAND_SECONDS` | no | command cap; default 120 seconds |
+
+For an OIDC-only or mTLS-only Helm deployment, set
+`auth.sharedTokenEnabled=false`. OIDC requires both issuer and audience; mTLS
+subject authentication requires a verified client CA. The bundled Runtime
+plugins currently use bearer/OIDC tokens; mTLS-only mode is for MCP or custom
+clients that present a certificate.
+
+When NetworkPolicy is enabled, use `networkPolicy.extraIngress` for an external
+Prometheus scraper and `networkPolicy.extraEgress` for external OIDC JWKS or
+HTTP audit collectors. Same-namespace Redis egress is generated automatically;
+set `redisNamespace` and optionally `redisPodSelector` for a remote namespace.
 
 `cubesandbox==0.7.0` does not read `CUBE_PROXY_SCHEME`; do not copy that variable
 from another SDK without checking the SDK version in use.
@@ -341,8 +468,9 @@ from another SDK without checking the SDK version in use.
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r adapter/requirements.txt
+.venv/bin/pip install -r adapter/requirements-dev.txt
 PYTHON=.venv/bin/python make test
+PYTHON=.venv/bin/python make typecheck
 make docker-build
 ```
 
@@ -382,19 +510,24 @@ hermes plugins disable cube-adapter-tools
 
 ## Security and current limits
 
-- Lease ownership is in process memory; the chart enforces one replica.
-- Restart recovery, durable encrypted traffic-token storage and owner fencing
-  are not implemented.
-- PTY, streaming output, cancellation, tenant quotas and approval callbacks are
-  not implemented.
+- Memory state remains the zero-dependency default and is intentionally
+  single-replica. Redis state is required when `replicaCount > 1`; records are
+  encrypted and operations use renewable distributed locks.
+- PTY, SSE output, async cancellation and tenant quotas are implemented.
+  Human approval callbacks and a general-purpose rate limiter are not.
+- CubeSandbox v0.7 does not support snapshots with volume/host mounts; profiles
+  reject that combination unless an operator explicitly enables the gate.
+- Profile `network` fields are operator-owned configuration, never model input.
 - The DSH integration exposes `cube_*` tools; it is not yet a transparent native
   `shell/fs/pty` provider.
 - OpenClaw does not currently expose a stable generic fourth sandbox backend;
   this project uses its documented Tool Plugin interface.
 - Hermes host terminal/file tools remain independent of this plugin; use a
   restricted toolset or profile when CubeSandbox must be the only executor.
-- Bearer auth should be combined with mTLS/workload identity, authorization,
-  rate limits and centralized audit before production use.
+- The MCP facade is stdio-only by default so it does not create a second
+  unauthenticated network listener.
+- Use per-tenant tokens or OIDC plus TLS/mTLS, restrictive network policy and
+  centralized audit before production use.
 
 See [SECURITY.md](SECURITY.md) for reporting and deployment guidance.
 

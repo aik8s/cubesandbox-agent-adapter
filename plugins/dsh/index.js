@@ -73,62 +73,123 @@ export function apply(ctx, config = {}) {
   ctx.systemPrompt.section({
     name: "tool:cube-adapter",
     order: 104,
-    text: "Use cube_exec, cube_read, and cube_write for shell and file work. They share one policy-controlled CubeSandbox MicroVM per DSH session. Call cube_release with pause when the user may continue or kill when the task is finished.",
+    text: "Use the cube_* tools for shell, files, durable jobs, and checkpoints. They share one policy-controlled CubeSandbox MicroVM per DSH session. Call cube_release when finished.",
   });
 
   const register = (definition) => {
     const bound = { ...definition, execute: definition.execute.bind({ config }) };
     return ctx.tools.register(bound);
   };
-  const disposers = [
-    register(
-      tool(
-        "cube_exec",
-        "Execute a shell command inside this DSH session's isolated CubeSandbox MicroVM. Use it for untrusted code and shell work; the DSH host is not the execution target.",
-        object(
-          {
-            command: { type: "string", description: "Shell command to execute in the MicroVM." },
-            cwd: { type: "string", description: "Absolute /workspace or /tmp working directory." },
-            timeout_ms: { type: "integer", description: "Timeout in milliseconds, capped by policy." },
-          },
-          ["command"],
-        ),
-        async (lease, args, exec) =>
-          request(config, `/v1/leases/${lease.lease_ref}/exec`, args, exec.signal),
+  const definitions = [
+    [
+      "cube_exec",
+      "Execute a shell command inside this DSH session's isolated CubeSandbox MicroVM.",
+      object(
+        {
+          command: { type: "string" },
+          cwd: { type: "string" },
+          timeout_ms: { type: "integer", minimum: 1 },
+        },
+        ["command"],
       ),
-    ),
-    register(
-      tool(
-        "cube_read",
-        "Read a file from this DSH session's CubeSandbox /workspace or /tmp.",
-        object({ path: { type: "string" } }, ["path"]),
-        async (lease, args, exec) =>
-          request(config, `/v1/leases/${lease.lease_ref}/read`, args, exec.signal),
+      (lease, args) => [`/v1/leases/${lease.lease_ref}/exec`, args],
+    ],
+    [
+      "cube_status",
+      "Inspect this DSH session's CubeSandbox lease state and TTL.",
+      object({}),
+      (lease) => [`/v1/leases/${lease.lease_ref}/status`, {}],
+    ],
+    [
+      "cube_read",
+      "Read a UTF-8 file from this DSH session's CubeSandbox.",
+      object({ path: { type: "string" } }, ["path"]),
+      (lease, args) => [`/v1/leases/${lease.lease_ref}/read`, args],
+    ],
+    [
+      "cube_write",
+      "Write a UTF-8 file inside this DSH session's CubeSandbox.",
+      object({ path: { type: "string" }, content: { type: "string" } }, ["path", "content"]),
+      (lease, args) => [`/v1/leases/${lease.lease_ref}/write`, args],
+    ],
+    [
+      "cube_list",
+      "List a directory inside this DSH session's CubeSandbox.",
+      object({ path: { type: "string" } }),
+      (lease, args) => [`/v1/leases/${lease.lease_ref}/list`, { path: args.path || "/workspace" }],
+    ],
+    [
+      "cube_job_start",
+      "Start a durable asynchronous command.",
+      object({ command: { type: "string" }, cwd: { type: "string" } }, ["command"]),
+      (lease, args) => [`/v1/leases/${lease.lease_ref}/jobs`, args],
+    ],
+    [
+      "cube_job_status",
+      "Inspect an asynchronous CubeSandbox job.",
+      object({ job_ref: { type: "string" } }, ["job_ref"]),
+      (_lease, args) => [`/v1/jobs/${encodeURIComponent(args.job_ref)}/status`, {}],
+    ],
+    [
+      "cube_job_output",
+      "Read a page of asynchronous job output.",
+      object(
+        {
+          job_ref: { type: "string" },
+          offset: { type: "integer", minimum: 0 },
+          max_bytes: { type: "integer", minimum: 1, maximum: 1048576 },
+        },
+        ["job_ref"],
       ),
-    ),
-    register(
-      tool(
-        "cube_write",
-        "Write a UTF-8 file inside this DSH session's CubeSandbox /workspace or /tmp.",
-        object({ path: { type: "string" }, content: { type: "string" } }, ["path", "content"]),
-        async (lease, args, exec) =>
-          request(config, `/v1/leases/${lease.lease_ref}/write`, args, exec.signal),
-      ),
-    ),
-    register(
-      tool(
-        "cube_release",
-        "Pause or destroy this DSH session's CubeSandbox lease.",
-        object({ action: { type: "string", enum: ["pause", "kill"] } }),
-        async (lease, args, exec) =>
-          request(
-            config,
-            `/v1/leases/${lease.lease_ref}/release`,
-            { action: args.action || "pause" },
-            exec.signal,
-          ),
-      ),
-    ),
+      (_lease, { job_ref, ...body }) => [`/v1/jobs/${encodeURIComponent(job_ref)}/output`, body],
+    ],
+    [
+      "cube_job_cancel",
+      "Cancel an asynchronous CubeSandbox job.",
+      object({ job_ref: { type: "string" } }, ["job_ref"]),
+      (_lease, args) => [`/v1/jobs/${encodeURIComponent(args.job_ref)}/cancel`, {}],
+    ],
+    [
+      "cube_checkpoint",
+      "Create a policy-gated CubeSandbox checkpoint.",
+      object({ name: { type: "string" } }),
+      (lease, args) => [`/v1/leases/${lease.lease_ref}/checkpoints`, args],
+    ],
+    [
+      "cube_rollback",
+      "Roll this DSH lease back to a checkpoint.",
+      object({ checkpoint_ref: { type: "string" } }, ["checkpoint_ref"]),
+      (lease, args) => [
+        `/v1/leases/${lease.lease_ref}/checkpoints/${encodeURIComponent(args.checkpoint_ref)}/rollback`,
+        {},
+      ],
+    ],
+    [
+      "cube_fork",
+      "Fork a new lease from a checkpoint.",
+      object({ checkpoint_ref: { type: "string" }, branch: { type: "string" } }, ["checkpoint_ref"]),
+      (lease, { checkpoint_ref, ...body }) => [
+        `/v1/leases/${lease.lease_ref}/checkpoints/${encodeURIComponent(checkpoint_ref)}/fork`,
+        body,
+      ],
+    ],
+    [
+      "cube_release",
+      "Pause or destroy this DSH session's CubeSandbox lease.",
+      object({ action: { type: "string", enum: ["pause", "kill"] } }),
+      (lease, args) => [
+        `/v1/leases/${lease.lease_ref}/release`,
+        { action: args.action || "pause" },
+      ],
+    ],
   ];
+  const disposers = definitions.map(([toolName, description, parameters, endpoint]) =>
+    register(
+      tool(toolName, description, parameters, async (lease, args, exec) => {
+        const [path, body] = endpoint(lease, args);
+        return request(config, path, body, exec.signal);
+      }),
+    ),
+  );
   return () => disposers.reverse().forEach((dispose) => dispose());
 }

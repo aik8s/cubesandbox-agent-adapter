@@ -1,11 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
+{{- if and (gt (int .Values.replicaCount) 1) (not .Values.state.enabled) }}
+{{- fail "replicaCount > 1 requires state.enabled=true with Redis-backed leases" }}
+{{- end }}
 metadata:
   name: {{ include "cubesandbox-agent-adapter.fullname" . }}
   labels:
     {{- include "cubesandbox-agent-adapter.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
   selector:
     matchLabels:
       {{- include "cubesandbox-agent-adapter.selectorLabels" . | nindent 6 }}
@@ -21,6 +29,7 @@ spec:
         {{- toYaml .Values.podLabels | nindent 8 }}
         {{- end }}
     spec:
+      terminationGracePeriodSeconds: 30
       serviceAccountName: {{ include "cubesandbox-agent-adapter.serviceAccountName" . }}
       automountServiceAccountToken: false
       {{- with .Values.imagePullSecrets }}
@@ -40,20 +49,34 @@ spec:
               value: /var/log/cube-adapter/audit.jsonl
             - name: CUBE_ADAPTER_AUDIT_UI
               value: {{ ternary "1" "0" .Values.adapter.auditUi | quote }}
+            - name: CUBE_ADAPTER_ADMIN_ENABLED
+              value: {{ ternary "1" "0" .Values.adapter.adminEnabled | quote }}
+            - name: CUBE_ADAPTER_READINESS_CACHE_SECONDS
+              value: {{ .Values.adapter.readinessCacheSeconds | quote }}
+            - name: CUBE_ADAPTER_AUDIT_SINKS
+              value: {{ join "," .Values.audit.sinks | quote }}
+            - name: CUBE_ADAPTER_PROFILES_FILE
+              value: /etc/cube-adapter/profiles/{{ .Values.profiles.key }}
             - name: CUBE_ADAPTER_SANDBOX_TIMEOUT
               value: {{ .Values.adapter.sandboxTimeoutSeconds | quote }}
             - name: CUBE_ADAPTER_MAX_COMMAND_SECONDS
               value: {{ .Values.adapter.maxCommandSeconds | quote }}
+            {{- if .Values.auth.sharedTokenEnabled }}
             - name: CUBE_ADAPTER_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.auth.existingSecret }}
                   key: {{ .Values.auth.tokenKey }}
+            {{- end }}
             - name: CUBE_ADAPTER_HMAC_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.auth.existingSecret }}
                   key: {{ .Values.auth.hmacKey }}
+            {{- if .Values.auth.tokenPrincipalsKey }}
+            - name: CUBE_ADAPTER_TOKENS_FILE
+              value: /etc/cube-adapter/auth/principals.json
+            {{- end }}
             - name: CUBE_TEMPLATE_ID
               value: {{ .Values.cube.templateId | quote }}
             - name: CUBE_API_URL
@@ -62,18 +85,83 @@ spec:
               value: {{ .Values.cube.proxyHost | quote }}
             - name: CUBE_PROXY_PORT_HTTP
               value: {{ .Values.cube.proxyPort | quote }}
+            {{- if .Values.cube.existingSecret }}
+            - name: CUBE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.cube.existingSecret }}
+                  key: {{ .Values.cube.apiKeyKey }}
+            {{- end }}
+            {{- if .Values.state.enabled }}
+            - name: CUBE_ADAPTER_STATE_BACKEND_URL
+              {{- if .Values.state.redisUrl }}
+              value: {{ .Values.state.redisUrl | quote }}
+              {{- else }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.state.existingSecret }}
+                  key: {{ .Values.state.redisUrlKey }}
+              {{- end }}
+            - name: CUBE_ADAPTER_STATE_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.state.existingSecret }}
+                  key: {{ .Values.state.encryptionKeyKey }}
+            - name: CUBE_ADAPTER_STATE_PREFIX
+              value: {{ .Values.state.prefix | quote }}
+            - name: CUBE_ADAPTER_GC_INTERVAL
+              value: {{ .Values.state.gcIntervalSeconds | quote }}
+            - name: CUBE_ADAPTER_LOCK_TTL
+              value: {{ .Values.state.lockTtlSeconds | quote }}
+            {{- end }}
+            {{- if .Values.audit.httpUrl }}
+            - name: CUBE_ADAPTER_AUDIT_HTTP_URL
+              value: {{ .Values.audit.httpUrl | quote }}
+            {{- end }}
+            {{- if .Values.audit.httpTokenSecret }}
+            - name: CUBE_ADAPTER_AUDIT_HTTP_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.audit.httpTokenSecret }}
+                  key: {{ .Values.audit.httpTokenKey }}
+            {{- end }}
+            {{- if .Values.oidc.jwksUrl }}
+            - name: CUBE_ADAPTER_OIDC_JWKS_URL
+              value: {{ .Values.oidc.jwksUrl | quote }}
+            - name: CUBE_ADAPTER_OIDC_ISSUER
+              value: {{ .Values.oidc.issuer | quote }}
+            - name: CUBE_ADAPTER_OIDC_AUDIENCE
+              value: {{ .Values.oidc.audience | quote }}
+            - name: CUBE_ADAPTER_OIDC_TENANT_CLAIM
+              value: {{ .Values.oidc.tenantClaim | quote }}
+            - name: CUBE_ADAPTER_OIDC_ROLES_CLAIM
+              value: {{ .Values.oidc.rolesClaim | quote }}
+            {{- end }}
+            {{- if .Values.tls.enabled }}
+            - name: CUBE_ADAPTER_TLS_CERT_FILE
+              value: /etc/cube-adapter/tls/tls.crt
+            - name: CUBE_ADAPTER_TLS_KEY_FILE
+              value: /etc/cube-adapter/tls/tls.key
+            {{- if .Values.tls.clientCaKey }}
+            - name: CUBE_ADAPTER_TLS_CLIENT_CA_FILE
+              value: /etc/cube-adapter/tls/client-ca.crt
+            {{- end }}
+            - name: CUBE_ADAPTER_TRUST_CLIENT_CERT_SUBJECT
+              value: {{ ternary "1" "0" .Values.tls.trustClientCertSubject | quote }}
+            {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
           readinessProbe:
-            httpGet:
-              path: /healthz
-              port: http
+            exec:
+              command: ["python", "-m", "adapter.healthcheck", "ready"]
+            initialDelaySeconds: 3
+            timeoutSeconds: 10
             periodSeconds: 5
           livenessProbe:
-            httpGet:
-              path: /healthz
-              port: http
+            exec:
+              command: ["python", "-m", "adapter.healthcheck", "live"]
+            timeoutSeconds: 3
             periodSeconds: 15
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
@@ -89,6 +177,19 @@ spec:
               mountPath: /var/log/cube-adapter
             - name: tmp
               mountPath: /tmp
+            - name: profiles
+              mountPath: /etc/cube-adapter/profiles
+              readOnly: true
+            {{- if .Values.auth.tokenPrincipalsKey }}
+            - name: auth-principals
+              mountPath: /etc/cube-adapter/auth
+              readOnly: true
+            {{- end }}
+            {{- if .Values.tls.enabled }}
+            - name: tls
+              mountPath: /etc/cube-adapter/tls
+              readOnly: true
+            {{- end }}
       securityContext:
         fsGroup: 65532
         fsGroupChangePolicy: OnRootMismatch
@@ -97,9 +198,42 @@ spec:
           type: RuntimeDefault
       volumes:
         - name: audit
+          {{- if .Values.audit.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ default (printf "%s-audit" (include "cubesandbox-agent-adapter.fullname" .)) .Values.audit.persistence.existingClaim }}
+          {{- else }}
           emptyDir: {}
+          {{- end }}
         - name: tmp
           emptyDir: {}
+        - name: profiles
+          configMap:
+            name: {{ default (printf "%s-profiles" (include "cubesandbox-agent-adapter.fullname" .)) .Values.profiles.existingConfigMap }}
+            items:
+              - key: {{ .Values.profiles.key }}
+                path: {{ .Values.profiles.key }}
+        {{- if .Values.auth.tokenPrincipalsKey }}
+        - name: auth-principals
+          secret:
+            secretName: {{ .Values.auth.existingSecret }}
+            items:
+              - key: {{ .Values.auth.tokenPrincipalsKey }}
+                path: principals.json
+        {{- end }}
+        {{- if .Values.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.tls.existingSecret }}
+            items:
+              - key: {{ .Values.tls.certKey }}
+                path: tls.crt
+              - key: {{ .Values.tls.privateKeyKey }}
+                path: tls.key
+              {{- if .Values.tls.clientCaKey }}
+              - key: {{ .Values.tls.clientCaKey }}
+                path: client-ca.crt
+              {{- end }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

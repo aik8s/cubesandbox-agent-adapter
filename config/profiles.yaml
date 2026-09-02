@@ -1,0 +1,32 @@
+defaults:
+  sandbox_timeout_seconds: 300
+  max_command_seconds: 120
+  lease_idle_ttl_seconds: 3600
+  max_active_leases_per_tenant: 8
+  max_jobs_per_lease: 8
+
+profiles:
+  offline-code:
+    allow_internet_access: false
+    network:
+      allow_public_traffic: false
+    lifecycle:
+      on_timeout: pause
+      auto_resume: true
+
+  persistent-code:
+    allow_internet_access: false
+    network:
+      allow_public_traffic: false
+    workspace:
+      mode: per-session-volume
+      retain_on_kill: true
+    # CubeSandbox v0.7 snapshots currently reject mounted volumes. Keep this
+    # disabled until upstream issue #1599 is resolved and the profile is tested.
+    checkpoints_enabled: false
+
+  checkpoint-code:
+    allow_internet_access: false
+    network:
+      allow_public_traffic: false
+    checkpoints_enabled: true

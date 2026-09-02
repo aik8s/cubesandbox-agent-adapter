@@ -6,60 +6,16 @@ import threading
 import unittest
 import urllib.error
 import urllib.request
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 
 from adapter.cube_adapter import AdapterConfig, CubeAdapter, make_handler
-from http.server import ThreadingHTTPServer
-
-
-class FakeResult:
-    stdout = "remote-ok\n"
-    stderr = ""
-    exit_code = 0
-
-
-class FakeCommands:
-    def run(self, command, **_kwargs):
-        self.last_command = command
-        return FakeResult()
-
-
-class FakeFiles:
-    def __init__(self):
-        self.values = {}
-
-    def write(self, path, content):
-        self.values[path] = content
-
-    def read(self, path):
-        return self.values[path]
-
-
-class FakeSandbox:
-    created = []
-
-    def __init__(self):
-        self.sandbox_id = "12345678-full-private-id"
-        self.commands = FakeCommands()
-        self.files = FakeFiles()
-        self.paused = False
-        self.killed = False
-        self.__class__.created.append(self)
-
-    @classmethod
-    def create(cls, **_kwargs):
-        return cls()
-
-    def pause(self, wait=True):
-        self.paused = wait
-
-    def kill(self):
-        self.killed = True
+from adapter.test_support import FakeSandbox
 
 
 class AdapterHttpTest(unittest.TestCase):
     def setUp(self):
-        FakeSandbox.created.clear()
+        FakeSandbox.reset()
         self.tmp = tempfile.TemporaryDirectory()
         self.audit_path = Path(self.tmp.name) / "audit.jsonl"
         config = AdapterConfig(
@@ -68,7 +24,11 @@ class AdapterHttpTest(unittest.TestCase):
             template="agent-code",
             audit_log=str(self.audit_path),
         )
-        self.adapter = CubeAdapter(config, sandbox_factory=FakeSandbox.create)
+        self.adapter = CubeAdapter(
+            config,
+            sandbox_factory=FakeSandbox.create,
+            sandbox_connector=FakeSandbox.connect,
+        )
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(self.adapter))
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
@@ -138,6 +98,13 @@ class AdapterHttpTest(unittest.TestCase):
         with self.assertRaises(urllib.error.HTTPError) as traversal:
             self.post(f"/v1/leases/{lease}/read", {"path": "/workspace/../etc/shadow"})
         self.assertEqual(traversal.exception.code, 403)
+
+        with self.assertRaises(urllib.error.HTTPError) as unknown:
+            self.post(
+                f"/v1/leases/{lease}/exec",
+                {"command": "true", "unexpected": "fail-closed"},
+            )
+        self.assertEqual(unknown.exception.code, 400)
 
     def test_hermes_runtime_is_isolated_from_other_runtime_sessions(self):
         hermes = self.post(

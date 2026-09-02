@@ -1,0 +1,33 @@
+name: CubeSandbox E2E
+
+on:
+  workflow_dispatch:
+    inputs:
+      adapter_url:
+        description: HTTPS URL of a deployed test Adapter
+        required: true
+        type: string
+      profile:
+        description: Adapter profile used for the disposable E2E lease
+        required: true
+        default: offline-code
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  real-cube:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Exercise real CubeSandbox through the Adapter
+        env:
+          CUBE_E2E_ADAPTER_URL: ${{ inputs.adapter_url }}
+          CUBE_E2E_ADAPTER_TOKEN: ${{ secrets.CUBE_E2E_ADAPTER_TOKEN }}
+          CUBE_E2E_PROFILE: ${{ inputs.profile }}
+        run: python tests/e2e_real.py

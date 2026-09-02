@@ -1,0 +1,11 @@
+{{- if not .Values.profiles.existingConfigMap }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cubesandbox-agent-adapter.fullname" . }}-profiles
+  labels:
+    {{- include "cubesandbox-agent-adapter.labels" . | nindent 4 }}
+data:
+  {{ .Values.profiles.key }}: |
+    {{- toYaml .Values.profiles.data | nindent 4 }}
+{{- end }}

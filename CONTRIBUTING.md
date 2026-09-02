@@ -6,8 +6,9 @@ Thanks for helping improve cubesandbox-agent-adapter.
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -r adapter/requirements.txt
+.venv/bin/pip install -r adapter/requirements-dev.txt
 PYTHON=.venv/bin/python make test
+PYTHON=.venv/bin/python make typecheck
 ```
 
 Optional checks:

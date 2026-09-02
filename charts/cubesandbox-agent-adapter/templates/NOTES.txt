@@ -6,5 +6,8 @@ Service URL inside this namespace:
 Label each in-namespace Runtime Pod that may call the Adapter:
   cubesandbox-agent-adapter-client: "true"
 
-The sample audit volume is ephemeral. Export JSONL events to durable storage
-before using this deployment beyond a test environment.
+State mode: {{ ternary "Redis-backed HA/recovery" "in-memory single replica" .Values.state.enabled }}
+Audit storage: {{ ternary "persistent volume" "ephemeral emptyDir" .Values.audit.persistence.enabled }}
+
+Export audit events to a centralized sink and configure CubeAPI authentication
+before using this deployment beyond a protected test environment.

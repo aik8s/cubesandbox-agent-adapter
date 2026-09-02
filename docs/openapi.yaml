@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
   title: CubeSandbox Agent Adapter API
-  version: 0.2.0
+  version: 0.3.0
   description: >-
-    Authenticated, policy-controlled execution API used by Agent runtime
-    plugins. Full Sandbox IDs and traffic tokens are intentionally absent.
+    Authenticated, tenant-aware execution broker for CubeSandbox microVMs.
+    Full Sandbox IDs, Cube traffic tokens, commands, output, and bearer tokens
+    are intentionally excluded from audit records.
 servers:
   - url: http://127.0.0.1:18080
-    description: local development
 security:
   - bearerAuth: []
 paths:
@@ -16,274 +16,551 @@ paths:
       security: []
       operationId: health
       responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /readyz:
+    get:
+      security: []
+      operationId: readiness
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "503": { $ref: "#/components/responses/JsonSuccess" }
+  /metrics:
+    get:
+      security: []
+      operationId: prometheusMetrics
+      responses:
         "200":
-          description: Adapter health
+          description: Prometheus exposition format
           content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Health"
+            text/plain:
+              schema: { type: string }
+  /audit:
+    get:
+      operationId: auditUi
+      responses:
+        "200":
+          description: Redacted operator audit view
+          content:
+            text/html:
+              schema: { type: string }
+        "403": { $ref: "#/components/responses/Denied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/leases:
+    get:
+      operationId: listLeases
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
   /v1/leases/acquire:
     post:
       operationId: acquireLease
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/AcquireRequest"
+      requestBody: { $ref: "#/components/requestBodies/Acquire" }
       responses:
-        "200":
-          description: New or reused session lease
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Lease"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Denied"
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Denied" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/leases/{lease_ref}/status:
+    parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+    get:
+      operationId: getLeaseStatus
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      operationId: refreshLeaseStatus
+      requestBody: { $ref: "#/components/requestBodies/Status" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "404": { $ref: "#/components/responses/NotFound" }
   /v1/leases/{lease_ref}/exec:
     post:
       operationId: executeCommand
-      parameters:
-        - $ref: "#/components/parameters/LeaseRef"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ExecRequest"
+      parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Exec" }
       responses:
-        "200":
-          description: Redacted execution result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ExecResult"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "504": { $ref: "#/components/responses/Error" }
   /v1/leases/{lease_ref}/read:
     post:
-      operationId: readFile
-      parameters:
-        - $ref: "#/components/parameters/LeaseRef"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/PathRequest"
+      operationId: readTextFile
+      parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Path" }
       responses:
-        "200":
-          description: UTF-8 file content
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ReadResult"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Denied"
-        "404":
-          $ref: "#/components/responses/NotFound"
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "403": { $ref: "#/components/responses/Denied" }
   /v1/leases/{lease_ref}/write:
     post:
-      operationId: writeFile
-      parameters:
-        - $ref: "#/components/parameters/LeaseRef"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/WriteRequest"
+      operationId: writeTextFile
+      parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Write" }
       responses:
-        "200":
-          description: Write result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/WriteResult"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "403":
-          $ref: "#/components/responses/Denied"
-        "404":
-          $ref: "#/components/responses/NotFound"
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "403": { $ref: "#/components/responses/Denied" }
+  /v1/leases/{lease_ref}/list:
+    post:
+      operationId: listFiles
+      parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Path" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/leases/{lease_ref}/stat:
+    post:
+      operationId: statFile
+      parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Path" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/leases/{lease_ref}/mkdir:
+    post:
+      operationId: makeDirectory
+      parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Path" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/leases/{lease_ref}/remove:
+    post:
+      operationId: removeFile
+      parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Path" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/leases/{lease_ref}/move:
+    post:
+      operationId: moveFile
+      parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Move" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/leases/{lease_ref}/artifacts/upload:
+    post:
+      operationId: uploadArtifact
+      parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+      requestBody: { $ref: "#/components/requestBodies/ArtifactUpload" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "413": { $ref: "#/components/responses/Error" }
+  /v1/leases/{lease_ref}/artifacts/download:
+    post:
+      operationId: downloadArtifact
+      parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Path" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "413": { $ref: "#/components/responses/Error" }
   /v1/leases/{lease_ref}/release:
     post:
       operationId: releaseLease
+      parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Release" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/leases/{lease_ref}/jobs:
+    post:
+      operationId: startJob
+      parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+      requestBody: { $ref: "#/components/requestBodies/JobStart" }
+      responses:
+        "202": { $ref: "#/components/responses/JsonSuccess" }
+        "429": { $ref: "#/components/responses/Error" }
+  /v1/jobs/{job_ref}/status:
+    parameters: [{ $ref: "#/components/parameters/JobRef" }]
+    get:
+      operationId: getJobStatus
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+    post:
+      operationId: refreshJobStatus
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/jobs/{job_ref}/output:
+    post:
+      operationId: readJobOutput
+      parameters: [{ $ref: "#/components/parameters/JobRef" }]
+      requestBody: { $ref: "#/components/requestBodies/JobOutput" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/jobs/{job_ref}/cancel:
+    post:
+      operationId: cancelJob
+      parameters: [{ $ref: "#/components/parameters/JobRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/jobs/{job_ref}/events:
+    get:
+      operationId: streamJobEvents
+      parameters:
+        - $ref: "#/components/parameters/JobRef"
+        - $ref: "#/components/parameters/StreamTimeout"
+      responses:
+        "200": { $ref: "#/components/responses/EventStream" }
+  /v1/leases/{lease_ref}/ptys:
+    post:
+      operationId: createPty
+      parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+      requestBody: { $ref: "#/components/requestBodies/PtyCreate" }
+      responses:
+        "201": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/ptys/{pty_ref}/status:
+    get:
+      operationId: getPtyStatus
+      parameters: [{ $ref: "#/components/parameters/PtyRef" }]
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/ptys/{pty_ref}/input:
+    post:
+      operationId: sendPtyInput
+      parameters: [{ $ref: "#/components/parameters/PtyRef" }]
+      requestBody: { $ref: "#/components/requestBodies/PtyInput" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/ptys/{pty_ref}/resize:
+    post:
+      operationId: resizePty
+      parameters: [{ $ref: "#/components/parameters/PtyRef" }]
+      requestBody: { $ref: "#/components/requestBodies/PtyResize" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/ptys/{pty_ref}/kill:
+    post:
+      operationId: killPty
+      parameters: [{ $ref: "#/components/parameters/PtyRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/ptys/{pty_ref}/events:
+    get:
+      operationId: streamPtyEvents
+      parameters:
+        - $ref: "#/components/parameters/PtyRef"
+        - $ref: "#/components/parameters/StreamTimeout"
+      responses:
+        "200": { $ref: "#/components/responses/EventStream" }
+  /v1/leases/{lease_ref}/checkpoints:
+    parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+    get:
+      operationId: listCheckpoints
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+    post:
+      operationId: createCheckpoint
+      requestBody: { $ref: "#/components/requestBodies/CheckpointCreate" }
+      responses:
+        "201": { $ref: "#/components/responses/JsonSuccess" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/leases/{lease_ref}/checkpoints/{checkpoint_ref}/rollback:
+    post:
+      operationId: rollbackCheckpoint
       parameters:
         - $ref: "#/components/parameters/LeaseRef"
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ReleaseRequest"
+        - $ref: "#/components/parameters/CheckpointRef"
+      requestBody: { $ref: "#/components/requestBodies/CheckpointAction" }
       responses:
-        "200":
-          description: Release result
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ReleaseResult"
-        "401":
-          $ref: "#/components/responses/Unauthorized"
-        "404":
-          $ref: "#/components/responses/NotFound"
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/leases/{lease_ref}/checkpoints/{checkpoint_ref}/fork:
+    post:
+      operationId: forkCheckpoint
+      parameters:
+        - $ref: "#/components/parameters/LeaseRef"
+        - $ref: "#/components/parameters/CheckpointRef"
+      requestBody: { $ref: "#/components/requestBodies/CheckpointAction" }
+      responses:
+        "201": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/leases/{lease_ref}/checkpoints/{checkpoint_ref}/delete:
+    post:
+      operationId: deleteCheckpoint
+      parameters:
+        - $ref: "#/components/parameters/LeaseRef"
+        - $ref: "#/components/parameters/CheckpointRef"
+      requestBody: { $ref: "#/components/requestBodies/CheckpointAction" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/admin/gc:
+    post:
+      operationId: runGarbageCollection
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "403": { $ref: "#/components/responses/Denied" }
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
+      bearerFormat: opaque-or-JWT
   parameters:
     LeaseRef:
       name: lease_ref
       in: path
       required: true
-      schema:
-        type: string
-      description: Opaque lease returned to the trusted Runtime plugin.
+      schema: { type: string, pattern: "^lease_[a-f0-9]{20}$" }
+    JobRef:
+      name: job_ref
+      in: path
+      required: true
+      schema: { type: string, pattern: "^job_[a-f0-9]{20}$" }
+    PtyRef:
+      name: pty_ref
+      in: path
+      required: true
+      schema: { type: string, pattern: "^pty_[a-f0-9]{20}$" }
+    CheckpointRef:
+      name: checkpoint_ref
+      in: path
+      required: true
+      schema: { type: string, pattern: "^checkpoint_[a-f0-9]{20}$" }
+    StreamTimeout:
+      name: timeout
+      in: query
+      schema: { type: number, minimum: 1, maximum: 900, default: 300 }
+  requestBodies:
+    Acquire:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/AcquireRequest" }
+    Exec:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ExecRequest" }
+    Path:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/PathRequest" }
+    Write:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/WriteRequest" }
+    Move:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/MoveRequest" }
+    ArtifactUpload:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ArtifactUploadRequest" }
+    Release:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ReleaseRequest" }
+    Status:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/StatusRequest" }
+    JobStart:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/JobStartRequest" }
+    JobOutput:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/JobOutputRequest" }
+    PtyCreate:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/PtyCreateRequest" }
+    PtyInput:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/PtyInputRequest" }
+    PtyResize:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/PtyResizeRequest" }
+    CheckpointCreate:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CheckpointCreateRequest" }
+    CheckpointAction:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/CheckpointActionRequest" }
+    Empty:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/EmptyRequest" }
   responses:
+    JsonSuccess:
+      description: Successful JSON response
+      content:
+        application/json:
+          schema: { type: object }
+    EventStream:
+      description: Server-sent events; PTY output payloads are Base64 encoded
+      content:
+        text/event-stream:
+          schema: { type: string }
+    Error:
+      description: Adapter error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
     Unauthorized:
       description: Missing or invalid bearer token
       content:
         application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
+          schema: { $ref: "#/components/schemas/Error" }
     Denied:
-      description: Policy denied the request
+      description: Authenticated caller is not permitted to perform the operation
       content:
         application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
+          schema: { $ref: "#/components/schemas/Error" }
     NotFound:
-      description: Lease does not exist or has expired
+      description: Resource is absent or hidden by tenant isolation
       content:
         application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
+          schema: { $ref: "#/components/schemas/Error" }
   schemas:
-    Health:
+    RequestId:
+      type: string
+      pattern: "^[A-Za-z0-9_.:-]{1,80}$"
+    Path:
+      type: string
+      pattern: "^/(workspace|tmp)(/|$)"
+    BaseRequest:
       type: object
-      required: [status, version, active_leases]
+      additionalProperties: false
       properties:
-        status: { type: string, const: ok }
-        version: { type: string }
-        active_leases: { type: integer, minimum: 0 }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    EmptyRequest:
+      $ref: "#/components/schemas/BaseRequest"
     AcquireRequest:
       type: object
       additionalProperties: false
       required: [runtime, session_key]
       properties:
-        runtime: { type: string, enum: [openclaw, dsh, hermes] }
+        runtime: { type: string, enum: [openclaw, dsh, hermes, mcp] }
         session_key: { type: string, minLength: 1, maxLength: 512 }
-        profile: { type: string, enum: [offline-code], default: offline-code }
+        profile: { type: string, default: offline-code }
         request_id: { $ref: "#/components/schemas/RequestId" }
-    Lease:
-      type: object
-      required: [executor, lease_ref, sandbox_ref, profile, reused]
-      properties:
-        executor: { type: string, const: cubesandbox-microvm }
-        lease_ref: { type: string }
-        sandbox_ref: { $ref: "#/components/schemas/SandboxRef" }
-        profile: { type: string, const: offline-code }
-        reused: { type: boolean }
     ExecRequest:
       type: object
       additionalProperties: false
       required: [command]
       properties:
         command: { type: string, minLength: 1, maxLength: 16384 }
-        cwd: { type: string, pattern: "^/(workspace|tmp)(/|$)" }
-        timeout_ms: { type: integer, minimum: 1, maximum: 120000 }
+        cwd: { $ref: "#/components/schemas/Path" }
+        timeout_ms: { type: integer, minimum: 1 }
         request_id: { $ref: "#/components/schemas/RequestId" }
-    ExecResult:
-      type: object
-      required:
-        - executor
-        - sandbox_ref
-        - request_id
-        - exit_code
-        - stdout
-        - stderr
-        - stdout_truncated
-        - stderr_truncated
-        - duration_ms
-      properties:
-        executor: { type: string, const: cubesandbox-microvm }
-        sandbox_ref: { $ref: "#/components/schemas/SandboxRef" }
-        request_id: { $ref: "#/components/schemas/RequestId" }
-        exit_code: { type: integer }
-        stdout: { type: string }
-        stderr: { type: string }
-        stdout_truncated: { type: boolean }
-        stderr_truncated: { type: boolean }
-        duration_ms: { type: integer, minimum: 0 }
     PathRequest:
       type: object
       additionalProperties: false
       required: [path]
       properties:
-        path: { type: string, pattern: "^/(workspace|tmp)(/|$)" }
+        path: { $ref: "#/components/schemas/Path" }
         request_id: { $ref: "#/components/schemas/RequestId" }
     WriteRequest:
       type: object
       additionalProperties: false
       required: [path, content]
       properties:
-        path: { type: string, pattern: "^/(workspace|tmp)(/|$)" }
+        path: { $ref: "#/components/schemas/Path" }
         content: { type: string, maxLength: 262144 }
         request_id: { $ref: "#/components/schemas/RequestId" }
-    ReadResult:
+    MoveRequest:
       type: object
-      required: [executor, sandbox_ref, request_id, path, content, truncated]
+      additionalProperties: false
+      required: [path, destination]
       properties:
-        executor: { type: string, const: cubesandbox-microvm }
-        sandbox_ref: { $ref: "#/components/schemas/SandboxRef" }
+        path: { $ref: "#/components/schemas/Path" }
+        destination: { $ref: "#/components/schemas/Path" }
         request_id: { $ref: "#/components/schemas/RequestId" }
-        path: { type: string }
-        content: { type: string }
-        truncated: { type: boolean }
-    WriteResult:
+    ArtifactUploadRequest:
       type: object
-      required: [executor, sandbox_ref, request_id, path, bytes]
+      additionalProperties: false
+      required: [path, content_base64]
       properties:
-        executor: { type: string, const: cubesandbox-microvm }
-        sandbox_ref: { $ref: "#/components/schemas/SandboxRef" }
+        path: { $ref: "#/components/schemas/Path" }
+        content_base64: { type: string, contentEncoding: base64 }
         request_id: { $ref: "#/components/schemas/RequestId" }
-        path: { type: string }
-        bytes: { type: integer, minimum: 0 }
     ReleaseRequest:
       type: object
       additionalProperties: false
       properties:
         action: { type: string, enum: [pause, kill], default: pause }
         request_id: { $ref: "#/components/schemas/RequestId" }
-    ReleaseResult:
+    StatusRequest:
       type: object
-      required: [executor, sandbox_ref, request_id, action]
+      additionalProperties: false
       properties:
-        executor: { type: string, const: cubesandbox-microvm }
-        sandbox_ref: { $ref: "#/components/schemas/SandboxRef" }
+        refresh: { type: boolean, default: true }
         request_id: { $ref: "#/components/schemas/RequestId" }
-        action: { type: string, enum: [pause, kill] }
-    SandboxRef:
-      type: string
-      pattern: "^[A-Za-z0-9_-]{1,16}$"
-      description: Short non-authorizing correlation reference.
-    RequestId:
-      type: string
-      pattern: "^[A-Za-z0-9_.:-]{1,80}$"
+    JobStartRequest:
+      type: object
+      additionalProperties: false
+      required: [command]
+      properties:
+        command: { type: string, minLength: 1, maxLength: 16384 }
+        cwd: { $ref: "#/components/schemas/Path" }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    JobOutputRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        offset: { type: integer, minimum: 0, default: 0 }
+        max_bytes: { type: integer, minimum: 1, maximum: 1048576 }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    PtyCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        rows: { type: integer, minimum: 1, maximum: 1000, default: 24 }
+        cols: { type: integer, minimum: 1, maximum: 1000, default: 80 }
+        cwd: { $ref: "#/components/schemas/Path" }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    PtyInputRequest:
+      type: object
+      additionalProperties: false
+      required: [data]
+      properties:
+        data: { type: string, maxLength: 262144 }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    PtyResizeRequest:
+      type: object
+      additionalProperties: false
+      required: [rows, cols]
+      properties:
+        rows: { type: integer, minimum: 1, maximum: 1000 }
+        cols: { type: integer, minimum: 1, maximum: 1000 }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    CheckpointCreateRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        name: { type: string, minLength: 1, maxLength: 128 }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    CheckpointActionRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        branch: { type: string, minLength: 1, maxLength: 128 }
+        request_id: { $ref: "#/components/schemas/RequestId" }
     Error:
       type: object
+      additionalProperties: false
       required: [error]
       properties:
         error:
           type: object
+          additionalProperties: false
           required: [code, message]
           properties:
             code: { type: string }

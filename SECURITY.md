@@ -29,10 +29,11 @@ Agent control plane:
 - restrict egress to CubeAPI, CubeProxy and DNS;
 - keep the optional audit UI disabled;
 - export JSONL audit events before local rotation or Pod loss;
-- run exactly one replica until durable ownership and fencing exist;
+- use one replica with memory state, or Redis-backed encrypted state for HA;
 - deny host Shell/FS tools when a profile is supposed to be Cube-only;
 - rotate the bearer token independently from the session HMAC key.
 
-The current reference implementation is not a complete tenant boundary. It
-does not yet implement tenant quotas, authorization callbacks, durable leases,
-cross-process recovery, PTY, streaming cancellation or owner fencing.
+The Adapter implements tenant-scoped leases and quotas, Redis recovery, PTY and
+streaming cancellation. It does not replace cluster admission policy, a general
+rate limiter, human approval workflows, or deployment-specific identity and
+network controls.

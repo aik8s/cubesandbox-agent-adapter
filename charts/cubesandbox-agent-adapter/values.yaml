@@ -2,26 +2,96 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/aik8s/cubesandbox-agent-adapter
-  tag: v0.2.0
+  tag: v0.3.0
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
 
 auth:
   existingSecret: cube-adapter-auth
+  sharedTokenEnabled: true
   tokenKey: token
   hmacKey: hmac-key
+  tokenPrincipalsKey: ""
+
+oidc:
+  jwksUrl: ""
+  issuer: ""
+  audience: ""
+  tenantClaim: tenant_id
+  rolesClaim: roles
+
+tls:
+  enabled: false
+  existingSecret: ""
+  certKey: tls.crt
+  privateKeyKey: tls.key
+  clientCaKey: ""
+  trustClientCertSubject: false
 
 cube:
   apiUrl: http://cube-api.cube-system.svc:3000
   proxyHost: cube-proxy.cube-system.svc
   proxyPort: 80
   templateId: agent-code
+  existingSecret: ""
+  apiKeyKey: api-key
+
+profiles:
+  existingConfigMap: ""
+  key: profiles.yaml
+  data:
+    defaults:
+      sandbox_timeout_seconds: 300
+      max_command_seconds: 120
+      lease_idle_ttl_seconds: 3600
+      max_active_leases_per_tenant: 8
+      max_jobs_per_lease: 8
+    profiles:
+      offline-code:
+        allow_internet_access: false
+        network:
+          allow_public_traffic: false
+        lifecycle:
+          on_timeout: pause
+          auto_resume: true
+      persistent-code:
+        allow_internet_access: false
+        network:
+          allow_public_traffic: false
+        workspace:
+          mode: per-session-volume
+          retain_on_kill: true
+        checkpoints_enabled: false
+
+state:
+  enabled: false
+  redisUrl: ""
+  existingSecret: cube-adapter-auth
+  redisUrlKey: redis-url
+  encryptionKeyKey: state-encryption-key
+  prefix: cube-agent-adapter
+  gcIntervalSeconds: 30
+  lockTtlSeconds: 180
+
+audit:
+  sinks: [file]
+  httpUrl: ""
+  httpTokenSecret: ""
+  httpTokenKey: token
+  persistence:
+    enabled: false
+    existingClaim: ""
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+    size: 1Gi
 
 adapter:
   sandboxTimeoutSeconds: 300
   maxCommandSeconds: 120
   auditUi: false
+  adminEnabled: true
+  readinessCacheSeconds: 5
 
 service:
   type: ClusterIP
@@ -42,6 +112,11 @@ networkPolicy:
   cubeProxyPort: 80
   clientPodSelector:
     cubesandbox-agent-adapter-client: "true"
+  redisNamespace: ""
+  redisPodSelector: {}
+  redisPort: 6379
+  extraIngress: []
+  extraEgress: []
 
 podAnnotations: {}
 podLabels: {}

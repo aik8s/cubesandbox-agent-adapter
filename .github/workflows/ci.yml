@@ -8,27 +8,102 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  python:
+    name: Python ${{ matrix.python }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12", "3.14"]
+    services:
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
           cache: pip
-          cache-dependency-path: adapter/requirements.txt
-      - run: pip install -r adapter/requirements.txt
-      - run: python -m unittest -v adapter/test_cube_adapter.py
+          cache-dependency-path: |
+            adapter/requirements.txt
+            adapter/requirements-dev.txt
+      - run: python -m pip install -r adapter/requirements-dev.txt
+      - run: python -m unittest discover -s adapter -p 'test_*.py' -v
+        env:
+          CUBE_TEST_REDIS_URL: redis://127.0.0.1:6379/15
+          CUBE_TEST_REDIS_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
+      - run: python -m unittest -v plugins/hermes/test_plugin.py
+      - if: matrix.python == '3.12'
+        run: ruff check adapter plugins/hermes
+      - if: matrix.python == '3.12'
+        run: mypy adapter plugins/hermes
+
+  node:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
       - run: node --check plugins/openclaw/index.js
       - run: node --check plugins/dsh/index.js
+      - run: node --loader ./plugins/openclaw/test-loader.mjs plugins/openclaw/test-plugin.mjs
       - run: node plugins/dsh/test-plugin.mjs
+      - run: npx --yes @stoplight/spectral-cli@6.16.2 lint docs/openapi.yaml
       - run: bash tests/test_install.sh
+      - run: bash -n scripts/install.sh scripts/dev-up.sh
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
       - uses: azure/setup-helm@v5
       - run: helm lint charts/cubesandbox-agent-adapter
       - run: helm template test charts/cubesandbox-agent-adapter >/dev/null
-      - run: bash -n scripts/install.sh scripts/dev-up.sh
+      - name: Render Redis-backed HA values
+        run: >-
+          helm template ha charts/cubesandbox-agent-adapter
+          --set replicaCount=2
+          --set state.enabled=true
+          --set-string state.redisUrl=redis://redis:6379/0
+          >/dev/null
+      - name: Reject multi-replica memory state
+        run: >-
+          ! helm template unsafe charts/cubesandbox-agent-adapter
+          --set replicaCount=2
+          >/dev/null 2>&1
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
       - run: docker build -t cubesandbox-agent-adapter:ci adapter
+      - uses: anchore/sbom-action@v0.24.0
+        with:
+          image: cubesandbox-agent-adapter:ci
+          format: spdx-json
+          output-file: cubesandbox-agent-adapter.spdx.json
+      - uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          image-ref: cubesandbox-agent-adapter:ci
+          version: v0.74.0
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: sbom
+          path: cubesandbox-agent-adapter.spdx.json

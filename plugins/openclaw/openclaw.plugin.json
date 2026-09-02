@@ -2,7 +2,7 @@
   "id": "cube-adapter-tools",
   "name": "CubeSandbox Adapter Tools",
   "description": "Run untrusted Agent work in a policy-controlled CubeSandbox MicroVM.",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "activation": {
     "onStartup": true
   },
@@ -24,9 +24,6 @@
       },
       "profile": {
         "type": "string",
-        "enum": [
-          "offline-code"
-        ],
         "description": "Platform-owned policy profile."
       }
     }
@@ -34,8 +31,17 @@
   "contracts": {
     "tools": [
       "cube_exec",
+      "cube_status",
       "cube_read",
       "cube_write",
+      "cube_list",
+      "cube_job_start",
+      "cube_job_status",
+      "cube_job_output",
+      "cube_job_cancel",
+      "cube_checkpoint",
+      "cube_rollback",
+      "cube_fork",
       "cube_release"
     ]
   }

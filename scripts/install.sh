@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_IMAGE="ghcr.io/aik8s/cubesandbox-agent-adapter:v0.2.0"
+DEFAULT_IMAGE="ghcr.io/aik8s/cubesandbox-agent-adapter:v0.3.0"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -35,6 +35,10 @@ Adapter options:
   --cube-proxy-port PORT    CubeProxy HTTP port (default: 80)
   --template ID             READY CubeSandbox template alias (default: agent-code)
   --secret NAME             Existing/generated Secret (default: cube-adapter-auth)
+  --cube-api-secret NAME    Secret containing CubeAPI key
+  --cube-api-key-key KEY    CubeAPI Secret key (default: cube-api-key)
+  --replicas COUNT          Adapter replicas (default: 1; HA requires Redis)
+  --redis-secret NAME       Secret with redis-url and state-encryption-key
   --context NAME            kubectl context
   --disable-network-policy  Disable the chart's default same-namespace policy
 
@@ -79,7 +83,9 @@ merge_openclaw_array() {
   local path="$1"
   shift
   local current merged
-  current="$(openclaw config get "$path" --json 2>/dev/null || printf '[]')"
+  if ! current="$(openclaw config get "$path" --json 2>/dev/null)"; then
+    current='[]'
+  fi
   merged="$(node -e '
     const current = JSON.parse(process.argv[1] || "[]");
     if (!Array.isArray(current)) throw new Error("config path is not an array");
@@ -98,6 +104,10 @@ install_adapter() {
   local cube_proxy_port="80"
   local template_id="agent-code"
   local secret_name="cube-adapter-auth"
+  local cube_api_secret=""
+  local cube_api_key_key="cube-api-key"
+  local replicas="1"
+  local redis_secret=""
   local context=""
   local network_policy="true"
 
@@ -112,6 +122,10 @@ install_adapter() {
       --cube-proxy-port) cube_proxy_port="${2:?}"; shift 2 ;;
       --template) template_id="${2:?}"; shift 2 ;;
       --secret) secret_name="${2:?}"; shift 2 ;;
+      --cube-api-secret) cube_api_secret="${2:?}"; shift 2 ;;
+      --cube-api-key-key) cube_api_key_key="${2:?}"; shift 2 ;;
+      --replicas) replicas="${2:?}"; shift 2 ;;
+      --redis-secret) redis_secret="${2:?}"; shift 2 ;;
       --context) context="${2:?}"; shift 2 ;;
       --disable-network-policy) network_policy="false"; shift ;;
       -h|--help) usage; exit 0 ;;
@@ -124,6 +138,10 @@ install_adapter() {
   validate_url "$cube_api_url"
   [[ "$cube_proxy_port" =~ ^[0-9]+$ ]] || die "--cube-proxy-port must be numeric"
   [[ "$cube_api_port" =~ ^[0-9]+$ ]] || die "--cube-api-port must be numeric"
+  [[ "$replicas" =~ ^[1-9][0-9]*$ ]] || die "--replicas must be a positive integer"
+  if (( replicas > 1 )) && [[ -z "$redis_secret" ]]; then
+    die "--replicas greater than 1 requires --redis-secret"
+  fi
   [[ "$image" == *:* ]] || die "--image must include an explicit tag"
 
   need kubectl
@@ -160,21 +178,48 @@ install_adapter() {
       || die "existing Secret is missing key: hmac-key"
   fi
 
+  if [[ -n "$cube_api_secret" ]]; then
+    [[ "$("${kube[@]}" -n "$namespace" get secret "$cube_api_secret" -o go-template="{{if index .data \"$cube_api_key_key\"}}ok{{end}}")" == ok ]] \
+      || die "CubeAPI Secret is missing key: $cube_api_key_key"
+  fi
+  if [[ -n "$redis_secret" ]]; then
+    [[ "$("${kube[@]}" -n "$namespace" get secret "$redis_secret" -o go-template='{{if index .data "redis-url"}}ok{{end}}')" == ok ]] \
+      || die "Redis Secret is missing key: redis-url"
+    [[ "$("${kube[@]}" -n "$namespace" get secret "$redis_secret" -o go-template='{{if index .data "state-encryption-key"}}ok{{end}}')" == ok ]] \
+      || die "Redis Secret is missing key: state-encryption-key"
+  fi
+
   local image_repo="${image%:*}"
   local image_tag="${image##*:}"
   note "installing Adapter with Helm"
+  local -a helm_values=(
+    --set-string image.repository="$image_repo"
+    --set-string image.tag="$image_tag"
+    --set-string auth.existingSecret="$secret_name"
+    --set-string cube.apiUrl="$cube_api_url"
+    --set networkPolicy.cubeApiPort="$cube_api_port"
+    --set-string cube.proxyHost="$cube_proxy_host"
+    --set cube.proxyPort="$cube_proxy_port"
+    --set networkPolicy.cubeProxyPort="$cube_proxy_port"
+    --set-string cube.templateId="$template_id"
+    --set networkPolicy.enabled="$network_policy"
+    --set replicaCount="$replicas"
+  )
+  if [[ -n "$cube_api_secret" ]]; then
+    helm_values+=(
+      --set-string cube.existingSecret="$cube_api_secret"
+      --set-string cube.apiKeyKey="$cube_api_key_key"
+    )
+  fi
+  if [[ -n "$redis_secret" ]]; then
+    helm_values+=(
+      --set state.enabled=true
+      --set-string state.existingSecret="$redis_secret"
+    )
+  fi
   "${helm_cmd[@]}" upgrade --install "$release" "$ROOT_DIR/charts/cubesandbox-agent-adapter" \
     --namespace "$namespace" \
-    --set-string image.repository="$image_repo" \
-    --set-string image.tag="$image_tag" \
-    --set-string auth.existingSecret="$secret_name" \
-    --set-string cube.apiUrl="$cube_api_url" \
-    --set networkPolicy.cubeApiPort="$cube_api_port" \
-    --set-string cube.proxyHost="$cube_proxy_host" \
-    --set cube.proxyPort="$cube_proxy_port" \
-    --set networkPolicy.cubeProxyPort="$cube_proxy_port" \
-    --set-string cube.templateId="$template_id" \
-    --set networkPolicy.enabled="$network_policy" \
+    "${helm_values[@]}" \
     --wait --timeout 5m
 
   note "installed"
@@ -215,13 +260,18 @@ install_openclaw() {
 
   token_file="$(cd "$(dirname "$token_file")" && pwd)/$(basename "$token_file")"
   note "installing OpenClaw Tool Plugin"
-  openclaw plugins install "$ROOT_DIR/plugins/openclaw"
+  # OpenClaw requires an explicit trust acknowledgement for local sources.
+  # This path is the reviewed plugin bundled in the current checkout.
+  openclaw plugins install "$ROOT_DIR/plugins/openclaw" --force --accept-capabilities
   openclaw plugins enable cube-adapter-tools >/dev/null
   openclaw config set plugins.entries.cube-adapter-tools.config.adapterUrl "$adapter_url" >/dev/null
   openclaw config set plugins.entries.cube-adapter-tools.config.tokenFile "$token_file" >/dev/null
   openclaw config set plugins.entries.cube-adapter-tools.config.profile offline-code >/dev/null
   merge_openclaw_array plugins.allow cube-adapter-tools
-  merge_openclaw_array tools.alsoAllow cube_exec cube_read cube_write cube_release
+  merge_openclaw_array tools.alsoAllow \
+    cube_exec cube_status cube_read cube_write cube_list \
+    cube_job_start cube_job_status cube_job_output cube_job_cancel \
+    cube_checkpoint cube_rollback cube_fork cube_release
   openclaw config validate
   note "OpenClaw integration installed; restart the Gateway"
 }

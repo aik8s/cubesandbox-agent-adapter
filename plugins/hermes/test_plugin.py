@@ -65,7 +65,24 @@ class HermesPluginTest(unittest.TestCase):
                     )
                 )
 
-        self.assertEqual(set(context.tools), {"cube_exec", "cube_read", "cube_write", "cube_release"})
+        self.assertEqual(
+            set(context.tools),
+            {
+                "cube_exec",
+                "cube_status",
+                "cube_read",
+                "cube_write",
+                "cube_list",
+                "cube_job_start",
+                "cube_job_status",
+                "cube_job_output",
+                "cube_job_cancel",
+                "cube_checkpoint",
+                "cube_rollback",
+                "cube_fork",
+                "cube_release",
+            },
+        )
         self.assertEqual(result["executor"], "cubesandbox-microvm")
         self.assertEqual(calls[0][1]["runtime"], "hermes")
         self.assertEqual(calls[0][1]["session_key"], "hermes-task-123")
