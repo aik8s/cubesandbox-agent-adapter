@@ -6,9 +6,10 @@
   <meta name="color-scheme" content="light">
   <meta name="description" content="Connect OpenClaw, DSH, Hermes and Codex to policy-controlled CubeSandbox MicroVMs. Deployment guides, trusted tasks and real client evidence.">
   <meta name="theme-color" content="#faf9f5">
-  <title>CubeSandbox Agent Adapter — 受控执行，自由协作</title>
+  <title>CubeSandbox Agent Adapter — 可信执行、权限与审计</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="trust.css">
   <script src="app.js" defer></script>
 </head>
 <body>
@@ -16,7 +17,7 @@
   <header class="header wrap">
     <a class="brand" href="#"><img src="favicon.svg" width="34" height="34" alt=""><span>CubeSandbox<span class="brand-sub">AGENT ADAPTER</span></span></a>
     <nav aria-label="Main navigation">
-      <a href="#features" data-en="Capabilities">能力</a><a href="#evidence" data-en="In action">实测</a><a href="#deploy" data-en="Deploy">部署</a>
+      <a href="#trust" data-en="Trust & audit">可信与审计</a><a href="#evidence" data-en="In action">实测</a><a href="#deploy" data-en="Deploy">部署</a>
       <button id="language" type="button" aria-label="Switch to English">EN ↗</button>
       <a class="github" href="https://github.com/aik8s/cubesandbox-agent-adapter">GitHub ↗</a>
     </nav>
@@ -25,9 +26,10 @@
     <section class="hero wrap">
       <div class="hero-copy">
         <a class="release" href="https://github.com/aik8s/cubesandbox-agent-adapter/releases/tag/v{{VERSION}}"><span class="dot"></span> v{{VERSION}} <span data-en="· Trusted task workflows">· 可信任务工作流</span> ↗</a>
-        <h1 data-en="Your local agent.&#10;A controlled place&#10;to execute.">让本地 Agent，&#10;在受控沙箱中&#10;执行。</h1>
+        <h1 data-en="Your local agent.&#10;Trusted execution.&#10;Auditable results.">本地 Agent，&#10;可信执行，&#10;操作可审计。</h1>
         <p class="intro" data-en="Keep the agent you love. Connect it to isolated MicroVMs through one policy-controlled entry point, with approved tasks and auditable results.">保留你熟悉的代码 Agent。通过统一的策略入口连接隔离的 MicroVM，让任务有授权、执行有边界、结果可审计。</p>
-        <div class="actions"><a class="button primary" href="#deploy" data-en="Start deploying →">开始部署 →</a><a class="button" href="#evidence" data-en="See real client runs ↗">查看客户端实测 ↗</a></div>
+        <div class="actions"><a class="button primary" href="#deploy" data-en="Start deploying →">开始部署 →</a><a class="button" href="#trust" data-en="See trust & audit evidence ↗">查看可信与审计证据 ↗</a></div>
+        <p class="hero-boundary" data-en="Task-scoped permissions · Independent approval · Redacted audit · Signed receipts. Controlled execution, not a hardware TEE.">任务级权限 · 独立审批 · 脱敏审计 · 签名回执。这里的可信指受控执行，不是硬件 TEE。</p>
         <p class="fine" data-en="Open source · Docker & Kubernetes · No model API key in the Adapter">开源 · Docker / Kubernetes · Adapter 无需模型 API Key</p>
       </div>
       <aside class="flow-card" aria-label="Illustrative execution workflow">
@@ -50,6 +52,40 @@
         <article><span class="number">03</span><h3 data-en="Results you can inspect">结果有据可查</h3><p data-en="Allowlisted outputs, cleanup state and HS256-signed execution receipts make the task outcome inspectable.">输出白名单、清理状态与 HS256 签名执行回执，帮助检查任务产物和执行结果。</p></article>
       </div>
     </section>
+    <section class="trust-section" id="trust"><div class="wrap section">
+      <div class="section-heading"><div><p class="eyebrow" data-en="TRUST IS A VERIFIABLE PROCESS">可信，要有可核查的依据</p><h2 data-en="Permissions. Approval. Audit.">权限有边界，审批有依据，执行有审计。</h2></div><a data-doc="trust" href="https://github.com/aik8s/cubesandbox-agent-adapter/blob/main/docs/trusted-execution.zh-CN.md" data-en="Security boundaries & evidence ↗">安全边界与验收记录 ↗</a></div>
+      <p class="section-intro" data-en="Keep your code agent on the office network and production resources behind a controlled gateway. Operators define the allowed tasks; independent approvers authorize gated plans; results carry cleanup and integrity evidence.">本地代码 Agent 留在办公网，生产资源通过受控入口访问。运维方定义允许的任务，独立审批人授权需审批的计划，执行结果附带清理与完整性证据。</p>
+      <div class="trust-principles"><article><h3 data-en="Least privilege">最小权限</h3><p data-en="A task-only identity has no raw exec, file or job access. Closed schemas reject parameters outside the template contract.">仅任务身份不具备原始 exec、文件或作业接口权限；封闭 Schema 拒绝模板约定外的参数。</p></article><article><h3 data-en="Separation of duties">职责分离</h3><p data-en="Approval-required plans bind parameters and commands to hashes. The requester cannot approve their own plan.">需要审批的计划以摘要绑定参数与命令；请求人不能审批自己的计划。</p></article><article><h3 data-en="Traceable, not indiscriminate">可追溯，不滥收集</h3><p data-en="Redacted events correlate actions and outcomes; signed receipts capture execution and cleanup evidence without logging raw task content.">脱敏事件关联操作与结果；签名回执承载执行和清理证据，审计不记录任务原始内容。</p></article></div>
+      <p class="evidence-note" data-en="Evidence provenance: the first four images are report captures from recorded MicroVM acceptance runs, not an interactive product console. The audit image is a historical demo-page capture from August 2026. These are not new tests of today's deployment or a security certification. Open the original image to inspect small text.">证据来源：前四张为已记录的 MicroVM 实测验收报告截图，并非交互式产品控制台；审计图为 2026 年 8 月演示页的历史实测截图。不代表本次重新测试当前部署，也不构成安全认证。小字可打开原图查看。</p>
+      <div class="tabs trust-tabs" role="tablist" aria-label="Trust and audit evidence">
+        <button role="tab" id="trust-tab-approval" data-trust="approval" aria-controls="trust-panel-approval" aria-selected="true" data-en="Independent approval">独立审批</button>
+        <button role="tab" id="trust-tab-execution" data-trust="execution" aria-controls="trust-panel-execution" aria-selected="false" tabindex="-1" data-en="Outputs & cleanup">输出与清理</button>
+        <button role="tab" id="trust-tab-receipt" data-trust="receipt" aria-controls="trust-panel-receipt" aria-selected="false" tabindex="-1" data-en="Signed receipts">签名回执</button>
+        <button role="tab" id="trust-tab-denial" data-trust="denial" aria-controls="trust-panel-denial" aria-selected="false" tabindex="-1" data-en="Blocked paths">异常阻断</button>
+        <button role="tab" id="trust-tab-audit" data-trust="audit" aria-controls="trust-panel-audit" aria-selected="false" tabindex="-1" data-en="Audit events">审计事件</button>
+      </div>
+      <div class="trust-panel" id="trust-panel-approval" role="tabpanel" aria-labelledby="trust-tab-approval" tabindex="0">
+        <h3 data-en="Approve the exact plan that will run.">审批的，就是即将执行的计划。</h3><p data-en="The report verifies immutable plan hashes, independent approval and idempotent submission. Repeated submission returns the same task instead of executing twice.">图中验证计划摘要绑定、独立审批与幂等提交；重复提交返回同一任务，不重复执行。</p>
+        <figure><a href="assets/02-plan-and-approval.jpg" target="_blank" rel="noopener"><img src="assets/02-plan-and-approval.jpg" width="1720" height="1238" loading="lazy" alt="Acceptance report: approval review, independent approval and idempotent submission"></a><figcaption><span data-en="Recorded acceptance report · approval-review / independent-approval / idempotent-submit">历史验收报告 · approval-review / independent-approval / idempotent-submit</span><a href="assets/02-plan-and-approval.jpg" target="_blank" rel="noopener" data-en="Open full image ↗">打开原图 ↗</a></figcaption></figure>
+      </div>
+      <div class="trust-panel" id="trust-panel-execution" role="tabpanel" aria-labelledby="trust-tab-execution" tabindex="0" hidden>
+        <h3 data-en="Control what comes back. Verify cleanup.">控制返回什么，也确认资源已清理。</h3><p data-en="Allowlisted metrics are returned while model content remains digest-only. The report verifies MicroVM cleanup before a final receipt becomes available.">白名单指标允许返回，模型内容仅返回摘要；图中验证 MicroVM 已清理后才提供最终回执。</p>
+        <figure><a href="assets/03-execution-output-cleanup.jpg" target="_blank" rel="noopener"><img src="assets/03-execution-output-cleanup.jpg" width="1720" height="1238" loading="lazy" alt="Acceptance report: output policy, real MicroVM execution and verified cleanup"></a><figcaption><span data-en="Recorded acceptance report · output-policy / cleanup-verified">历史验收报告 · output-policy / cleanup-verified</span><a href="assets/03-execution-output-cleanup.jpg" target="_blank" rel="noopener" data-en="Open full image ↗">打开原图 ↗</a></figcaption></figure>
+      </div>
+      <div class="trust-panel" id="trust-panel-receipt" role="tabpanel" aria-labelledby="trust-tab-receipt" tabindex="0" hidden>
+        <h3 data-en="An execution result with verifiable integrity.">执行结果，附带可校验的完整性证据。</h3><p data-en="The HS256 receipt verifies offline and includes cleanup evidence. GET and POST transports return consistent evidence. Verification requires a shared secret; this is not public-key attestation or non-repudiation.">HS256 回执可离线验证，并包含清理证据；GET 与 POST 返回一致证据。验证依赖共享密钥，不是公钥远程证明或不可否认性保证。</p>
+        <figure><a href="assets/04-signed-receipt.jpg" target="_blank" rel="noopener"><img src="assets/04-signed-receipt.jpg" width="1720" height="1238" loading="lazy" alt="Acceptance report: HS256 receipt signature and consistent receipt transports"></a><figcaption><span data-en="Recorded acceptance report · receipt-signature / receipt-get-post">历史验收报告 · receipt-signature / receipt-get-post</span><a href="assets/04-signed-receipt.jpg" target="_blank" rel="noopener" data-en="Open full image ↗">打开原图 ↗</a></figcaption></figure>
+      </div>
+      <div class="trust-panel" id="trust-panel-denial" role="tabpanel" aria-labelledby="trust-tab-denial" tabindex="0" hidden>
+        <h3 data-en="A denied or expired plan does not proceed.">拒绝或过期的计划，不能继续执行。</h3><p data-en="The report checks denied and expired plans, invalid outputs, and cancellation with cleanup. Approval-free execution is possible only for templates explicitly configured with that policy.">图中覆盖已拒绝计划、已过期计划、非法输出、取消与清理；免审批执行仅适用于运维方明确配置为该策略的模板。</p>
+        <figure><a href="assets/05-failure-handling.jpg" target="_blank" rel="noopener"><img src="assets/05-failure-handling.jpg" width="1720" height="1238" loading="lazy" alt="Acceptance report: denied and expired plans blocked, invalid output rejected, cancellation cleanup"></a><figcaption><span data-en="Recorded acceptance report · denied / expired / invalid-output / cancel">历史验收报告 · denied / expired / invalid-output / cancel</span><a href="assets/05-failure-handling.jpg" target="_blank" rel="noopener" data-en="Open full image ↗">打开原图 ↗</a></figcaption></figure>
+      </div>
+      <div class="trust-panel" id="trust-panel-audit" role="tabpanel" aria-labelledby="trust-tab-audit" tabindex="0" hidden>
+        <h3 data-en="Correlate actions without exposing task content.">关联操作过程，不暴露任务正文。</h3><p data-en="This historical OpenClaw/DSH run shows runtime, action, short sandbox reference, request ID, result and duration. Raw commands, outputs, tokens and full sandbox IDs are omitted. The optional /audit page is a disabled-by-default demo; production needs a protected audit sink and retention policy.">这张 OpenClaw / DSH 历史实测图展示 Runtime、动作、沙箱短引用、Request ID、结果与耗时，不记录命令正文、输出、Token 或完整沙箱 ID。可选 /audit 页面默认关闭且仅供演示；生产需配置受保护的审计存储与保留策略。</p>
+        <figure><a href="assets/adapter-audit.jpg" target="_blank" rel="noopener"><img src="assets/adapter-audit.jpg" width="1720" height="1238" loading="lazy" alt="Historical redacted Adapter audit page showing OpenClaw and DSH action events"></a><figcaption><span data-en="August 2026 · historical demo audit view · not a live dashboard">2026 年 8 月 · 历史演示审计视图 · 非实时看板</span><a href="assets/adapter-audit.jpg" target="_blank" rel="noopener" data-en="Open full image ↗">打开原图 ↗</a></figcaption></figure>
+      </div>
+      <noscript><p>All evidence images: <a href="assets/03-execution-output-cleanup.jpg">Outputs & cleanup</a> · <a href="assets/04-signed-receipt.jpg">Signed receipts</a> · <a href="assets/05-failure-handling.jpg">Blocked paths</a> · <a href="assets/adapter-audit.jpg">Audit events</a></p></noscript>
+    </div></section>
     <section class="evidence-section" id="evidence"><div class="wrap section">
       <div class="section-heading"><div><p class="eyebrow" data-en="REAL CLIENTS. REAL RUNS.">真实客户端，真实调用</p><h2 data-en="See it in your agent.">在熟悉的应用里，跑起来。</h2></div><a href="https://github.com/aik8s/cubesandbox-agent-adapter/blob/main/docs/trusted-execution.md" data-en="Read the test evidence ↗">阅读验收记录 ↗</a></div>
       <p class="section-intro" data-en="Native application captures from real trusted-task runs: plan, submit, status, result and receipt. Published captures are redacted and shown in light mode.">以下是可信任务的应用原生截图，覆盖计划、提交、状态、结果和回执调用。已脱敏，统一使用浅色模式。</p>

@@ -7,6 +7,16 @@ It is a static, light-theme Chinese/English introduction, not an Adapter console
 It has no backend connection, credentials, analytics, third-party fonts or npm
 dependencies. Client images reuse the redacted public evidence in this repository.
 
+The `#trust` section puts permissions, independent approval, output policy,
+cleanup, signed receipts and redacted audit ahead of client screenshots. Its
+visual plan reuses four full-size light-theme acceptance-report captures from
+`docs/assets/trusted-execution-acceptance/` (02–05), plus the historical
+`docs/assets/readme/adapter-audit.jpg`. Each image has a bilingual readable
+summary and an original-image link for mobile inspection. These are existing
+evidence assets, not new test results or a product/security-console mockup.
+The historical audit demo is explicitly distinguished from a production audit
+service; HMAC verification is not hardware attestation or non-repudiation.
+
 ## Preview and publish
 
 ```sh
@@ -14,14 +24,14 @@ node scripts/build-site.mjs
 python3 -m http.server 19120 --bind 127.0.0.1 --directory dist/site
 ```
 
-Open <http://127.0.0.1:19120/>. Test language switching, all four screenshot
-tabs (including arrow keys), copy feedback, documentation links, and mobile
+Open <http://127.0.0.1:19120/>. Test language switching, all four client screenshot
+tabs and five trust/audit tabs (including arrow keys), copy feedback, documentation links, and mobile
 layout. The build reads `VERSION`; do not hardcode a new release in the page.
 
 `.github/workflows/pages.yml` builds on relevant pull requests and deploys on
 matching pushes to `main` (or manual dispatch). In repository Settings → Pages,
-the source must be **GitHub Actions**. Only `dist/site` is uploaded: the four
-static site files and four explicitly allowlisted public screenshots. Use a
+the source must be **GitHub Actions**. Only `dist/site` is uploaded: the five
+static site files and nine explicitly allowlisted public screenshots. Use a
 clean build directory when previewing after changing the allowlist; CI starts
 from a fresh checkout. Never add `.env`, runtime logs or internal connection
 details to the site or its build output.

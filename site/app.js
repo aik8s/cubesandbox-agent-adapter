@@ -28,12 +28,13 @@ function showClient(key) {
 }
 function setLanguage() {
   document.documentElement.lang = language === 'en' ? 'en' : 'zh-CN';
-  document.title = language === 'en' ? 'CubeSandbox Agent Adapter — Controlled execution for local agents' : 'CubeSandbox Agent Adapter — 受控执行，自由协作';
+  document.title = language === 'en' ? 'CubeSandbox Agent Adapter — Trusted execution, permissions & audit' : 'CubeSandbox Agent Adapter — 可信执行、权限与审计';
   for (const element of translated) element.textContent = element.dataset[language];
   const toggle = document.querySelector('#language');
   toggle.textContent = language === 'en' ? '中文 ↗' : 'EN ↗';
   toggle.setAttribute('aria-label', language === 'en' ? '切换到中文' : 'Switch to English');
   const base = 'https://github.com/aik8s/cubesandbox-agent-adapter/blob/main/';
+  document.querySelector('[data-doc=trust]').href = base + (language === 'en' ? 'docs/trusted-execution.md' : 'docs/trusted-execution.zh-CN.md');
   document.querySelector('[data-doc=docker]').href = base + (language === 'en' ? 'docs/deploy-docker.md' : 'docs/deploy-docker.zh-CN.md');
   document.querySelector('[data-doc=kubernetes]').href = base + (language === 'en' ? 'README.md#quick-start-kubernetes-adapter' : 'README.zh-CN.md#一键部署-kubernetes-adapter');
   document.querySelector('#copy-status').textContent = '';
@@ -55,6 +56,26 @@ for (const [index, tab] of tabs.entries()) {
     const next = event.key === 'Home' ? 0 : event.key === 'End' ? tabs.length - 1 : (index + offsets[event.key] + tabs.length) % tabs.length;
     tabs[next].focus();
     showClient(tabs[next].dataset.client);
+  });
+}
+const trustTabs = [...document.querySelectorAll('[data-trust]')];
+function showTrustTab(selected) {
+  for (const tab of trustTabs) {
+    const active = tab === selected;
+    tab.setAttribute('aria-selected', String(active));
+    tab.tabIndex = active ? 0 : -1;
+    document.getElementById(tab.getAttribute('aria-controls')).hidden = !active;
+  }
+}
+for (const [index, tab] of trustTabs.entries()) {
+  tab.addEventListener('click', () => showTrustTab(tab));
+  tab.addEventListener('keydown', event => {
+    const offsets = {ArrowRight: 1, ArrowLeft: -1};
+    if (!(event.key in offsets) && event.key !== 'Home' && event.key !== 'End') return;
+    event.preventDefault();
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? trustTabs.length - 1 : (index + offsets[event.key] + trustTabs.length) % trustTabs.length;
+    trustTabs[next].focus();
+    showTrustTab(trustTabs[next]);
   });
 }
 document.querySelector('#copy').addEventListener('click', async () => {

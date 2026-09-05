@@ -1,0 +1,16 @@
+.hero-boundary{font-size:13px;color:var(--teal);max-width:490px;line-height:1.8}
+.trust-section{background:#f1f5f0;border-top:1px solid var(--line)}
+.trust-section .section-heading{align-items:flex-start}
+.trust-section .section-heading>a{flex-shrink:0;margin-top:8px}
+.trust-principles{display:grid;grid-template-columns:repeat(3,1fr);gap:25px;margin:30px 0}
+.trust-principles article{border-top:2px solid #8cae98;padding-top:4px}
+.trust-principles p,.trust-panel>p{font-size:14px;color:var(--muted);line-height:1.85}
+.evidence-note{font-size:12px;line-height:1.8;color:var(--muted);border-left:3px solid #8cae98;padding:9px 15px;background:#ffffff80}
+.trust-panel{padding:24px;border:1px solid var(--line);border-radius:10px;background:white}
+.trust-panel[hidden]{display:none}
+.trust-panel h3{margin-top:0}
+.trust-panel img{width:100%;height:auto;display:block;border:1px solid var(--line);border-radius:6px}
+.trust-panel figure>a{display:block}
+.trust-panel figcaption a{flex-shrink:0}
+.trust-tabs{margin-top:25px}
+@media(max-width:700px){.trust-principles{grid-template-columns:1fr;gap:12px}.trust-principles h3{margin-top:12px}.trust-panel{padding:16px}.trust-panel figcaption{flex-direction:column}.trust-tabs{gap:4px}.trust-tabs button{padding:8px 11px}nav{gap:16px}.trust-section h2{font-size:30px}}
