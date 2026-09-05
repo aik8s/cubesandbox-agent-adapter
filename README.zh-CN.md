@@ -2,6 +2,8 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+[项目官网](https://aik8s.github.io/cubesandbox-agent-adapter/) · [官网发布说明](docs/website.md)
+
 这是一个社区集成项目，用于把 OpenClaw、DeepSeek Harness（DSH）、Hermes
 Agent 以及 Codex 等 MCP Host 的工具调用，经受控策略路由到
 [CubeSandbox](https://github.com/TencentCloud/CubeSandbox) MicroVM 中执行。

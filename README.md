@@ -2,6 +2,8 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+[Project website](https://aik8s.github.io/cubesandbox-agent-adapter/) · [Website publishing](docs/website.md)
+
 Community integration that routes OpenClaw, DeepSeek Harness (DSH), Hermes
 Agent and MCP hosts such as Codex into policy-controlled
 [CubeSandbox](https://github.com/TencentCloud/CubeSandbox) MicroVMs.
