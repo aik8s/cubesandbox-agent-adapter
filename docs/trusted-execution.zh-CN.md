@@ -1,5 +1,9 @@
 # 本地 Code Agent 到生产资源的受控可信执行
 
+首次安装先完成 [Docker Compose 部署](deploy-docker.zh-CN.md)或
+[Kubernetes 安装](../README.zh-CN.md#一键部署-kubernetes-adapter)，验证基础沙箱执行后，
+再按本文配置可信任务模板与审批身份。
+
 很多工程师希望继续使用本地熟悉的 Codex、Claude Code 或其他 Code Agent，但训练
 数据、内部服务、GPU 和生产数据库只存在于隔离的生产网。直接给笔记本开生产网权限，
 或者把生产凭据交给模型和本地插件，都会扩大信任边界。

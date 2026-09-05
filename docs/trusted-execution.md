@@ -1,5 +1,9 @@
 # Controlled execution from local code agents to production resources
 
+For a first installation, complete the [Docker Compose guide](deploy-docker.md)
+or [Kubernetes setup](../README.md#quick-start-kubernetes-adapter) and verify basic
+sandbox execution before configuring the task templates and approval identities below.
+
 Developers often want to keep a familiar local code agent while datasets,
 internal services, GPUs, and production systems remain inside an isolated
 production network. Giving the laptop direct production access—or passing

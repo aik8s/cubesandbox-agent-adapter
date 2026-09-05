@@ -23,6 +23,25 @@ return only short Sandbox references to the model.
 > trusted-task workflows, but still requires deployment-specific hardening and
 > acceptance tests in every target CubeSandbox environment.
 
+## Start here
+
+Follow this order: **prepare CubeSandbox → deploy the Adapter → connect one
+Agent → execute and release a sandbox**. The installers set up the Adapter or
+client plugins; CubeSandbox, a READY sandbox template, and the Agent application
+must already exist. Configure the model provider in the Agent; the Adapter does
+not need a model API key.
+
+| Your starting point | Deployment path |
+| --- | --- |
+| CubeSandbox is available; use a workstation or single server | [Docker Compose guide](docs/deploy-docker.md): published image, no Kubernetes required |
+| Kubernetes and CubeSandbox are available | [Kubernetes installation](#quick-start-kubernetes-adapter): requires kubectl, Helm, and cluster access |
+| No CubeSandbox backend yet | Follow the CubeSandbox deployment links below, prepare a READY template, and verify sandbox creation before installing the Adapter |
+| Basic execution works; add training, cleaning, and approval | [Trusted execution](docs/trusted-execution.md) and [task examples](examples/trusted-execution/): additional configuration is required |
+
+Both deployment paths need a CubeAPI URL, a CubeProxy host/port, and a READY
+template name reachable/usable from the Adapter. Configure CubeAPI credentials
+if backend authentication is enabled.
+
 ## CubeSandbox and Kubernetes
 
 CubeSandbox is the sandbox execution system; Kubernetes is an optional platform
@@ -247,7 +266,7 @@ a CubeSandbox 0.7.0 Kubernetes lab cluster.
 Clone the repository:
 
 ```bash
-git clone https://github.com/aik8s/cubesandbox-agent-adapter.git
+git clone --branch v0.4.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
 cd cubesandbox-agent-adapter
 ```
 
@@ -389,7 +408,22 @@ Loading the plugin does not globally disable Hermes' host terminal or file
 tools. Use the `cube-adapter` toolset for untrusted work and enforce the same
 restriction in the profile or gateway policy used by production sessions.
 
-## Local Docker development
+## Docker deployment and local development
+
+For a first installation, follow the [Docker Compose deployment guide](docs/deploy-docker.md).
+It uses the v0.4.0 published image and covers credentials, network addresses,
+health checks, real sandbox acceptance, client integration, and upgrades.
+Docker runs the Adapter; an existing CubeSandbox backend is still required.
+
+After configuring `.env` as described in the guide, start the published image:
+
+```bash
+docker compose pull adapter
+docker compose up -d --no-build adapter
+```
+
+The development flow below rebuilds an image after source changes. A first
+installation does not require a local build.
 
 Start the Adapter with generated secrets and a local Docker image:
 

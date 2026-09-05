@@ -21,6 +21,22 @@ Adapter 是唯一持有 Cube 连接配置、完整 Sandbox ID 和流量令牌的
 > 多租户策略和带审批的可信任务流程，但上线前仍需完成部署侧加固，并在每个目标
 > CubeSandbox 环境重新验收。
 
+## 新用户从哪里开始
+
+部署顺序是：**准备 CubeSandbox → 部署 Adapter → 接入一个 Agent → 执行并释放沙箱**。
+本仓库的安装器只安装 Adapter 或客户端插件；CubeSandbox、READY 沙箱模板和 Agent
+应用需要提前准备。模型 API 配置在 Agent 侧，Adapter 本身不需要模型 API Key。
+
+| 你的情况 | 从哪里开始 |
+| --- | --- |
+| 已有 CubeSandbox，想在电脑或单机服务器上部署 | [Docker Compose 部署指南](docs/deploy-docker.zh-CN.md)，使用发布镜像，不需要 Kubernetes |
+| 已有 Kubernetes 和 CubeSandbox | [Kubernetes 安装](#一键部署-kubernetes-adapter)，准备 kubectl、Helm 和集群访问配置 |
+| 还没有 CubeSandbox | 先按下面的 CubeSandbox 部署链接安装后端，制作 READY 模板并验证能创建沙箱，再部署 Adapter |
+| 基础执行已跑通，想使用训练、清洗和审批 | [可信执行指南](docs/trusted-execution.zh-CN.md)与[任务模板](examples/trusted-execution/)，这些需要额外配置，不会在安装后自动启用 |
+
+无论选择 Docker 还是 Kubernetes，都需要从 Adapter 所在环境可访问的 CubeAPI 地址、
+CubeProxy 地址/端口和 READY 模板名称；CubeAPI 开启认证时还需配置其凭据。
+
 ## CubeSandbox 和 Kubernetes 到底是什么关系
 
 CubeSandbox 是沙箱执行系统，Kubernetes 是可选的部署与运维平台。CubeSandbox
@@ -238,7 +254,7 @@ Hermes 路径已在 macOS Apple Silicon 的 Hermes Agent 0.20.6 与 CubeSandbox
 克隆仓库：
 
 ```bash
-git clone https://github.com/aik8s/cubesandbox-agent-adapter.git
+git clone --branch v0.4.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
 cd cubesandbox-agent-adapter
 ```
 
@@ -377,7 +393,20 @@ hermes -t cube-adapter
 应使用 `cube-adapter` Toolset，并在生产会话所用 Profile 或 Gateway 策略中落实同样
 的限制。
 
-## 本地 Docker 开发
+## Docker 部署与本地开发
+
+首次部署请使用 [Docker Compose 部署指南](docs/deploy-docker.zh-CN.md)：它从 v0.4.0
+发布镜像启动，包含密钥生成、网络地址选择、健康检查、真实沙箱验收、客户端接入和升级。
+Docker 只承载 Adapter，仍需连接已部署的 CubeSandbox 后端。
+
+已经按指南配置好 `.env` 时，发布镜像启动命令为：
+
+```bash
+docker compose pull adapter
+docker compose up -d --no-build adapter
+```
+
+下面的开发流程用于修改源码后重新构建镜像；首次使用不需要本地构建。
 
 生成开发 Secret、构建本地镜像并启动 Adapter：
 
