@@ -50,6 +50,8 @@ class OpenApiContractTest(unittest.TestCase):
             "pty_kill": "EmptyRequest",
             "checkpoint_create": "CheckpointCreateRequest",
             "checkpoint_action": "CheckpointActionRequest",
+            "task_plan": "TaskPlanRequest",
+            "task_approve": "TaskApproveRequest",
             "empty": "EmptyRequest",
         }
         self.assertEqual(set(mapping), set(ALLOWED_FIELDS))
@@ -102,7 +104,7 @@ class OpenApiContractTest(unittest.TestCase):
             str(hermes["version"]),
             str(project_version.group(1)),
         }
-        self.assertEqual(versions, {"0.3.0"})
+        self.assertEqual(versions, {"0.4.0"})
 
 
 if __name__ == "__main__":

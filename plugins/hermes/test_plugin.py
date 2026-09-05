@@ -81,12 +81,25 @@ class HermesPluginTest(unittest.TestCase):
                 "cube_rollback",
                 "cube_fork",
                 "cube_release",
+                "cube_task_plan",
+                "cube_task_submit",
+                "cube_task_status",
+                "cube_task_result",
+                "cube_task_cancel",
+                "cube_task_receipt",
             },
         )
         self.assertEqual(result["executor"], "cubesandbox-microvm")
         self.assertEqual(calls[0][1]["runtime"], "hermes")
         self.assertEqual(calls[0][1]["session_key"], "hermes-task-123")
         self.assertTrue(calls[1][0].endswith("/v1/leases/lease_hermes_test/exec"))
+        with mock.patch.dict(os.environ, {"CUBE_ADAPTER_TOKEN": "test-token"}, clear=False):
+            with mock.patch("plugins.hermes.urlopen", side_effect=fake_urlopen):
+                context.tools["cube_task_plan"]["handler"](
+                    {"template": "train-logistic", "parameters": {"epochs": 10}}
+                )
+        self.assertTrue(calls[2][0].endswith("/v1/tasks/plan"))
+        self.assertEqual(calls[2][1]["template"], "train-logistic")
 
     def test_missing_token_hides_tools_and_returns_redacted_error(self):
         context = FakeContext({"token_env": "MISSING_CUBE_TOKEN"})

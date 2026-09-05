@@ -82,6 +82,60 @@ class CheckpointRecord:
         return asdict(self)
 
 
+@dataclass
+class TaskPlanRecord:
+    plan_ref: str
+    tenant_id: str
+    requester_hash: str
+    template_name: str
+    template_digest: str
+    parameters: Dict[str, Any]
+    parameters_sha256: str
+    command_sha256: str
+    state: str
+    approval_required: bool
+    created_at: float
+    expires_at: float
+    approved_at: Optional[float] = None
+    approved_by_hash: Optional[str] = None
+    submitted_task_ref: Optional[str] = None
+    denial_reason_sha256: Optional[str] = None
+
+    @classmethod
+    def from_dict(cls, value: Dict[str, Any]) -> "TaskPlanRecord":
+        return cls(**value)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass
+class TaskRecord:
+    task_ref: str
+    plan_ref: str
+    tenant_id: str
+    requester_hash: str
+    template_name: str
+    template_digest: str
+    profile: str
+    lease_ref: Optional[str] = None
+    job_ref: Optional[str] = None
+    state: str = "starting"
+    created_at: float = field(default_factory=time.time)
+    updated_at: float = field(default_factory=time.time)
+    result: Optional[Dict[str, Any]] = None
+    receipt: Optional[Dict[str, Any]] = None
+    last_error: Optional[str] = None
+    cleanup_status: str = "not_started"
+
+    @classmethod
+    def from_dict(cls, value: Dict[str, Any]) -> "TaskRecord":
+        return cls(**value)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
 class StateStore(Protocol):
     durable: bool
 
@@ -118,6 +172,14 @@ class StateStore(Protocol):
 
     def list_checkpoints(self, lease_ref: str) -> list[CheckpointRecord]: ...
 
+    def put_task_plan(self, record: TaskPlanRecord) -> None: ...
+
+    def get_task_plan(self, plan_ref: str) -> Optional[TaskPlanRecord]: ...
+
+    def put_task(self, record: TaskRecord) -> None: ...
+
+    def get_task(self, task_ref: str) -> Optional[TaskRecord]: ...
+
     def close(self) -> None: ...
 
 
@@ -129,6 +191,8 @@ class MemoryStateStore:
         self._sessions: Dict[tuple[str, str, str], str] = {}
         self._jobs: Dict[str, JobRecord] = {}
         self._checkpoints: Dict[str, CheckpointRecord] = {}
+        self._task_plans: Dict[str, TaskPlanRecord] = {}
+        self._tasks: Dict[str, TaskRecord] = {}
         self._global_lock = threading.RLock()
         self._key_locks: Dict[str, threading.RLock] = {}
 
@@ -232,6 +296,24 @@ class MemoryStateStore:
                 for item in self._checkpoints.values()
                 if item.lease_ref == lease_ref
             ]
+
+    def put_task_plan(self, record: TaskPlanRecord) -> None:
+        with self._global_lock:
+            self._task_plans[record.plan_ref] = copy.deepcopy(record)
+
+    def get_task_plan(self, plan_ref: str) -> Optional[TaskPlanRecord]:
+        with self._global_lock:
+            value = self._task_plans.get(plan_ref)
+            return copy.deepcopy(value) if value else None
+
+    def put_task(self, record: TaskRecord) -> None:
+        with self._global_lock:
+            self._tasks[record.task_ref] = copy.deepcopy(record)
+
+    def get_task(self, task_ref: str) -> Optional[TaskRecord]:
+        with self._global_lock:
+            value = self._tasks.get(task_ref)
+            return copy.deepcopy(value) if value else None
 
     def close(self) -> None:
         return
@@ -466,6 +548,18 @@ return 0
             for item in self._members(self._key("lease-checkpoints", lease_ref))
         ]
         return [item for item in records if item is not None]
+
+    def put_task_plan(self, record: TaskPlanRecord) -> None:
+        self._save(self._key("task-plan", record.plan_ref), record)
+
+    def get_task_plan(self, plan_ref: str) -> Optional[TaskPlanRecord]:
+        return self._load(self._key("task-plan", plan_ref), TaskPlanRecord)
+
+    def put_task(self, record: TaskRecord) -> None:
+        self._save(self._key("task", record.task_ref), record)
+
+    def get_task(self, task_ref: str) -> Optional[TaskRecord]:
+        return self._load(self._key("task", task_ref), TaskRecord)
 
     def close(self) -> None:
         try:

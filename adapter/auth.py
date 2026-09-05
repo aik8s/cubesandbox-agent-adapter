@@ -94,12 +94,24 @@ class Authenticator:
 
         profiles = _claim_set(claims.get("cube_profiles"))
         runtimes = _claim_set(claims.get("cube_runtimes"))
+        actions = (
+            _claim_set(claims.get("cube_actions"))
+            if "cube_actions" in claims
+            else frozenset({"*"})
+        )
+        task_templates = (
+            _claim_set(claims.get("cube_task_templates"))
+            if "cube_task_templates" in claims
+            else frozenset({"*"})
+        )
         return AuthContext(
             tenant_id=tenant,
             subject=str(claims["sub"]),
             roles=roles or frozenset({"runtime"}),
             allowed_profiles=profiles,
             allowed_runtimes=runtimes,
+            allowed_actions=actions,
+            allowed_task_templates=task_templates,
         )
 
 

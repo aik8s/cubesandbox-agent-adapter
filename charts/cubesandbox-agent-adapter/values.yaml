@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/aik8s/cubesandbox-agent-adapter
-  tag: v0.3.0
+  tag: v0.4.0
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -12,6 +12,7 @@ auth:
   sharedTokenEnabled: true
   tokenKey: token
   hmacKey: hmac-key
+  receiptHmacKey: ""
   tokenPrincipalsKey: ""
 
 oidc:
@@ -63,6 +64,12 @@ profiles:
           mode: per-session-volume
           retain_on_kill: true
         checkpoints_enabled: false
+
+taskTemplates:
+  enabled: false
+  existingConfigMap: ""
+  key: task-templates.yaml
+  data: {}
 
 state:
   enabled: false

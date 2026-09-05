@@ -44,6 +44,8 @@ class AuthenticationTest(unittest.TestCase):
                 subject="runtime-a",
                 allowed_profiles=frozenset({"offline-code"}),
                 allowed_runtimes=frozenset({"hermes"}),
+                allowed_actions=frozenset({"task:*"}),
+                allowed_task_templates=frozenset({"train-logistic"}),
             ),
         )
         authenticator = Authenticator(self.config(token_principals=(principal,)))
@@ -51,6 +53,19 @@ class AuthenticationTest(unittest.TestCase):
         self.assertEqual(context.tenant_id, "team-a")
         self.assertTrue(context.permits_runtime("hermes"))
         self.assertFalse(context.permits_runtime("openclaw"))
+        self.assertTrue(context.permits_action("task:status"))
+        self.assertFalse(context.permits_action("exec:run"))
+        self.assertTrue(context.permits_task_template("train-logistic"))
+        self.assertFalse(
+            AuthContext("team-a", "disabled", allowed_actions=frozenset()).permits_action(
+                "task:plan"
+            )
+        )
+        self.assertFalse(
+            AuthContext(
+                "team-a", "disabled", allowed_task_templates=frozenset()
+            ).permits_task_template("train-logistic")
+        )
         with self.assertRaises(AuthFailure):
             authenticator.authenticate("Bearer invalid")
 
@@ -75,6 +90,8 @@ class AuthenticationTest(unittest.TestCase):
                 "roles": ["runtime"],
                 "cube_profiles": ["persistent-code"],
                 "cube_runtimes": "mcp hermes",
+                "cube_actions": ["task:plan", "task:status"],
+                "cube_task_templates": ["train-logistic"],
                 "iss": "https://issuer.example",
                 "aud": "cube-adapter",
                 "exp": int(time.time()) + 300,
@@ -86,6 +103,8 @@ class AuthenticationTest(unittest.TestCase):
         self.assertEqual(context.tenant_id, "team-b")
         self.assertEqual(context.allowed_profiles, frozenset({"persistent-code"}))
         self.assertEqual(context.allowed_runtimes, frozenset({"mcp", "hermes"}))
+        self.assertEqual(context.allowed_actions, frozenset({"task:plan", "task:status"}))
+        self.assertEqual(context.allowed_task_templates, frozenset({"train-logistic"}))
 
     def test_environment_allows_verified_mtls_only_and_rejects_weak_oidc(self):
         mtls_env = {

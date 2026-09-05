@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_IMAGE="ghcr.io/aik8s/cubesandbox-agent-adapter:v0.3.0"
+DEFAULT_IMAGE="ghcr.io/aik8s/cubesandbox-agent-adapter:v0.4.0"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -110,6 +110,7 @@ install_adapter() {
   local redis_secret=""
   local context=""
   local network_policy="true"
+  local receipt_hmac_key=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -159,23 +160,29 @@ install_adapter() {
   "${kube[@]}" create namespace "$namespace" --dry-run=client -o yaml | "${kube[@]}" apply -f - >/dev/null
 
   if ! "${kube[@]}" -n "$namespace" get secret "$secret_name" >/dev/null 2>&1; then
-    note "creating Adapter bearer and HMAC keys"
+    note "creating Adapter bearer, session HMAC, and receipt HMAC keys"
     local secret_tmp
     secret_tmp="$(mktemp -d)"
     umask 077
     printf '%s' "$(openssl rand -hex 32)" >"$secret_tmp/token"
     printf '%s' "$(openssl rand -hex 32)" >"$secret_tmp/hmac-key"
+    printf '%s' "$(openssl rand -hex 32)" >"$secret_tmp/receipt-hmac-key"
     "${kube[@]}" -n "$namespace" create secret generic "$secret_name" \
       --from-file=token="$secret_tmp/token" \
-      --from-file=hmac-key="$secret_tmp/hmac-key" >/dev/null
-    rm -f "$secret_tmp/token" "$secret_tmp/hmac-key"
+      --from-file=hmac-key="$secret_tmp/hmac-key" \
+      --from-file=receipt-hmac-key="$secret_tmp/receipt-hmac-key" >/dev/null
+    rm -f "$secret_tmp/token" "$secret_tmp/hmac-key" "$secret_tmp/receipt-hmac-key"
     rmdir "$secret_tmp"
+    receipt_hmac_key="receipt-hmac-key"
   else
     note "reusing existing Secret $namespace/$secret_name"
     [[ "$("${kube[@]}" -n "$namespace" get secret "$secret_name" -o go-template='{{if index .data "token"}}ok{{end}}')" == ok ]] \
       || die "existing Secret is missing key: token"
     [[ "$("${kube[@]}" -n "$namespace" get secret "$secret_name" -o go-template='{{if index .data "hmac-key"}}ok{{end}}')" == ok ]] \
       || die "existing Secret is missing key: hmac-key"
+    if [[ "$("${kube[@]}" -n "$namespace" get secret "$secret_name" -o go-template='{{if index .data "receipt-hmac-key"}}ok{{end}}')" == ok ]]; then
+      receipt_hmac_key="receipt-hmac-key"
+    fi
   fi
 
   if [[ -n "$cube_api_secret" ]]; then
@@ -205,6 +212,9 @@ install_adapter() {
     --set networkPolicy.enabled="$network_policy"
     --set replicaCount="$replicas"
   )
+  if [[ -n "$receipt_hmac_key" ]]; then
+    helm_values+=(--set-string auth.receiptHmacKey="$receipt_hmac_key")
+  fi
   if [[ -n "$cube_api_secret" ]]; then
     helm_values+=(
       --set-string cube.existingSecret="$cube_api_secret"
@@ -271,7 +281,9 @@ install_openclaw() {
   merge_openclaw_array tools.alsoAllow \
     cube_exec cube_status cube_read cube_write cube_list \
     cube_job_start cube_job_status cube_job_output cube_job_cancel \
-    cube_checkpoint cube_rollback cube_fork cube_release
+    cube_checkpoint cube_rollback cube_fork cube_release \
+    cube_task_plan cube_task_submit cube_task_status cube_task_result \
+    cube_task_cancel cube_task_receipt
   openclaw config validate
   note "OpenClaw integration installed; restart the Gateway"
 }

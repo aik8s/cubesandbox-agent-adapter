@@ -1,6 +1,6 @@
 services:
   adapter:
-    image: ghcr.io/aik8s/cubesandbox-agent-adapter:v0.3.0
+    image: ghcr.io/aik8s/cubesandbox-agent-adapter:v0.4.0
     build:
       context: ./adapter
     env_file:
@@ -9,6 +9,7 @@ services:
       - 127.0.0.1:18080:18080
     volumes:
       - ./config/profiles.yaml:/etc/cube-adapter/profiles.yaml:ro
+      - ./examples/trusted-execution/task-templates.yaml:/etc/cube-adapter/task-templates.yaml:ro
       - cube-adapter-audit:/var/log/cube-adapter
     read_only: true
     security_opt:

@@ -29,10 +29,13 @@ from .state import (
     JobRecord,
     LeaseRecord,
     StateStore,
+    TaskPlanRecord,
+    TaskRecord,
     build_state_store,
 )
+from .task_config import TaskOutputConfig, TaskTemplateConfig
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 MAX_BODY_BYTES = 16 * 1024 * 1024
 MAX_COMMAND_BYTES = 16 * 1024
 MAX_FILE_BYTES = 256 * 1024
@@ -45,6 +48,8 @@ LEASE_REF_RE = re.compile(r"^lease_[a-f0-9]{20}$")
 JOB_REF_RE = re.compile(r"^job_[a-f0-9]{20}$")
 PTY_REF_RE = re.compile(r"^pty_[a-f0-9]{20}$")
 CHECKPOINT_REF_RE = re.compile(r"^checkpoint_[a-f0-9]{20}$")
+TASK_PLAN_REF_RE = re.compile(r"^plan_[a-f0-9]{20}$")
+TASK_REF_RE = re.compile(r"^task_[a-f0-9]{20}$")
 
 
 class AdapterError(Exception):
@@ -140,6 +145,9 @@ class CubeAdapter:
     ) -> None:
         self.config = config
         self.profiles = config.profiles()
+        self.task_templates: Dict[str, TaskTemplateConfig] = config.task_templates(
+            self.profiles
+        )
         self.authenticator = Authenticator(config)
         self.metrics = metrics or AdapterMetrics()
         self.state = state_store or build_state_store(
@@ -176,6 +184,11 @@ class CubeAdapter:
             )
         except AuthFailure as error:
             raise AdapterError(error.status, error.code, error.message) from error
+
+    @staticmethod
+    def authorize(auth: AuthContext, action: str) -> None:
+        if not auth.permits_action(action):
+            raise AdapterError(403, "action_denied", f"action {action!r} is not allowed")
 
     # Lease lifecycle ------------------------------------------------
 
@@ -695,14 +708,14 @@ class CubeAdapter:
             )
             wrapper = (
                 f"chmod 700 -- {shlex.quote(script_path)} && "
-                "setsid /bin/sh -c "
+                "{ nohup setsid /bin/sh -c "
                 + shlex.quote(
                     "timeout --signal=TERM --kill-after=5s "
                     f"{profile.max_command_seconds} /bin/bash {shlex.quote(script_path)} "
                     f">{shlex.quote(stdout_path)} 2>{shlex.quote(stderr_path)}; "
                     f"printf '%s' $? >{shlex.quote(exit_path)}"
                 )
-                + " </dev/null >/dev/null 2>&1 & echo $!"
+                + " </dev/null >/dev/null 2>&1 & echo $!; }"
             )
             launch = sandbox.commands.run(wrapper, timeout=30)
             if launch.exit_code != 0:
@@ -1237,6 +1250,295 @@ class CubeAdapter:
             "checkpoint_ref": checkpoint_ref,
         }
 
+    # Approved trusted tasks ---------------------------------------
+
+    def list_task_templates(
+        self, auth: Optional[AuthContext] = None
+    ) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "task:plan")
+        return {
+            "task_templates": [
+                template.public_contract()
+                for template in self.task_templates.values()
+                if auth.permits_task_template(template.name)
+                and auth.permits_profile(template.profile)
+            ]
+        }
+
+    def task_plan(
+        self, body: Dict[str, Any], auth: Optional[AuthContext] = None
+    ) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "task:plan")
+        template_name = _required_string(body, "template", 63)
+        template = self.task_templates.get(template_name)
+        if template is None or not auth.permits_task_template(template_name):
+            raise AdapterError(403, "task_template_denied", "task template is not available")
+        if not auth.permits_profile(template.profile):
+            raise AdapterError(403, "profile_denied", "task profile is not allowed")
+        try:
+            parameters = template.validate_parameters(body.get("parameters"))
+            command = template.render_command(parameters)
+        except ValueError as error:
+            raise AdapterError(400, "invalid_parameters", str(error)) from error
+        if len(command.encode("utf-8")) > MAX_COMMAND_BYTES:
+            raise AdapterError(413, "value_too_large", "rendered task command is too large")
+        parameter_bytes = json.dumps(
+            parameters, ensure_ascii=False, separators=(",", ":")
+        ).encode("utf-8")
+        if len(parameter_bytes) > MAX_FILE_BYTES:
+            raise AdapterError(413, "value_too_large", "task parameters are too large")
+        now = time.time()
+        plan = TaskPlanRecord(
+            plan_ref=f"plan_{uuid.uuid4().hex[:20]}",
+            tenant_id=auth.tenant_id,
+            requester_hash=self._identity_hash(auth),
+            template_name=template.name,
+            template_digest=template.digest,
+            parameters=parameters,
+            parameters_sha256=self._json_digest(parameters),
+            command_sha256=hashlib.sha256(command.encode("utf-8")).hexdigest(),
+            state="pending_approval" if template.approval_required else "ready",
+            approval_required=template.approval_required,
+            created_at=now,
+            expires_at=now + template.plan_ttl_seconds,
+        )
+        self.state.put_task_plan(plan)
+        request_id = _request_id(body.get("request_id"))
+        self._audit_task(
+            auth,
+            "task_plan",
+            request_id,
+            "ok",
+            template,
+            plan_ref=plan.plan_ref,
+            parameters_sha256=plan.parameters_sha256,
+            command_sha256=plan.command_sha256,
+        )
+        return self._task_plan_result(plan)
+
+    def task_approve(
+        self,
+        plan_ref: str,
+        body: Dict[str, Any],
+        auth: Optional[AuthContext] = None,
+    ) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "task:approve")
+        if not auth.can_approve_tasks:
+            raise AdapterError(403, "approver_required", "approver role required")
+        decision = body.get("decision", "approve")
+        if decision not in {"approve", "deny"}:
+            raise AdapterError(400, "invalid_decision", "decision must be approve or deny")
+        reason = body.get("reason")
+        if reason is not None:
+            reason = _bounded_string(body, "reason", 1024)
+        request_id = _request_id(body.get("request_id"))
+        with self.state.lock(f"task-plan:{plan_ref}", self.config.lock_ttl_seconds):
+            plan = self._task_plan(plan_ref, auth)
+            template = self._task_template_for_plan(plan, auth)
+            self._expire_plan(plan)
+            if plan.state != "pending_approval":
+                raise AdapterError(409, "plan_not_pending", "task plan is not pending approval")
+            approver_hash = self._identity_hash(auth)
+            if approver_hash == plan.requester_hash and not auth.is_admin:
+                raise AdapterError(
+                    403,
+                    "self_approval_denied",
+                    "the requesting identity cannot approve its own task",
+                )
+            if decision == "approve":
+                plan.state = "approved"
+                plan.approved_at = time.time()
+                plan.approved_by_hash = approver_hash
+            else:
+                plan.state = "denied"
+                plan.denial_reason_sha256 = (
+                    hashlib.sha256(reason.encode("utf-8")).hexdigest() if reason else None
+                )
+            self.state.put_task_plan(plan)
+        self._audit_task(
+            auth,
+            "task_approve" if decision == "approve" else "task_deny",
+            request_id,
+            "ok",
+            template,
+            plan_ref=plan.plan_ref,
+            reason_sha256=plan.denial_reason_sha256,
+        )
+        return self._task_plan_result(plan)
+
+    def task_plan_status(
+        self, plan_ref: str, auth: Optional[AuthContext] = None
+    ) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "task:approve" if auth.can_approve_tasks else "task:status")
+        plan = self._task_plan(plan_ref, auth)
+        template = self._task_template_for_plan(plan, auth)
+        self._expire_plan(plan)
+        result = self._task_plan_result(plan)
+        result["contract"] = template.public_contract()
+        if auth.can_approve_tasks:
+            result["parameters"] = plan.parameters
+        return result
+
+    def task_submit(
+        self,
+        plan_ref: str,
+        body: Dict[str, Any],
+        auth: Optional[AuthContext] = None,
+    ) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "task:submit")
+        request_id = _request_id(body.get("request_id"))
+        with self.state.lock(f"task-plan:{plan_ref}", self.config.lock_ttl_seconds):
+            plan = self._task_plan(plan_ref, auth)
+            template = self._task_template_for_plan(plan, auth)
+            self._expire_plan(plan)
+            if self._identity_hash(auth) != plan.requester_hash and not auth.is_admin:
+                raise AdapterError(404, "task_plan_not_found", "task plan was not found")
+            if plan.submitted_task_ref:
+                existing = self.state.get_task(plan.submitted_task_ref)
+                if existing is not None:
+                    return self._task_result_value(existing)
+            allowed_states = {"approved"} if plan.approval_required else {"ready"}
+            if plan.state not in allowed_states:
+                raise AdapterError(409, "plan_not_approved", "task plan is not approved")
+            task = TaskRecord(
+                task_ref=f"task_{uuid.uuid4().hex[:20]}",
+                plan_ref=plan.plan_ref,
+                tenant_id=plan.tenant_id,
+                requester_hash=plan.requester_hash,
+                template_name=plan.template_name,
+                template_digest=plan.template_digest,
+                profile=template.profile,
+            )
+            plan.submitted_task_ref = task.task_ref
+            plan.state = "submitted"
+            self.state.put_task(task)
+            self.state.put_task_plan(plan)
+
+        command = template.render_command(plan.parameters)
+        lease_ref: Optional[str] = None
+        try:
+            lease = self.acquire(
+                {
+                    "runtime": "mcp",
+                    "session_key": "trusted-task:" + task.task_ref,
+                    "profile": template.profile,
+                    "request_id": request_id,
+                },
+                auth,
+            )
+            lease_ref = lease["lease_ref"]
+            task.lease_ref = lease_ref
+            task.updated_at = time.time()
+            self.state.put_task(task)
+            job = self.job_start(
+                lease_ref,
+                {
+                    "command": command,
+                    "cwd": template.cwd,
+                    "request_id": request_id,
+                },
+                auth,
+            )
+            task.lease_ref = lease_ref
+            task.job_ref = job["job_ref"]
+            task.state = "running"
+            task.updated_at = time.time()
+            self.state.put_task(task)
+        except Exception as error:
+            if lease_ref:
+                try:
+                    self.release(lease_ref, {"action": "kill"}, auth)
+                    task.cleanup_status = "verified"
+                except Exception:
+                    task.cleanup_status = "pending"
+            task.state = "setup_failed"
+            task.last_error = type(error).__name__
+            task.updated_at = time.time()
+            self.state.put_task(task)
+            self._audit_task(
+                auth,
+                "task_submit",
+                request_id,
+                "error",
+                template,
+                plan_ref=plan.plan_ref,
+                task_ref=task.task_ref,
+                error_type=type(error).__name__,
+            )
+            raise
+        self._audit_task(
+            auth,
+            "task_submit",
+            request_id,
+            "ok",
+            template,
+            plan_ref=plan.plan_ref,
+            task_ref=task.task_ref,
+        )
+        return self._task_result_value(task)
+
+    def task_status(
+        self, task_ref: str, auth: Optional[AuthContext] = None
+    ) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "task:status")
+        task = self._task(task_ref, auth)
+        if task.state == "running" and task.job_ref:
+            try:
+                job, record = self._job(task.job_ref, auth)
+                self._refresh_job(job, record)
+                task.state = job.state
+                task.updated_at = time.time()
+                self.state.put_task(task)
+            except AdapterError:
+                task.state = "orphaned"
+                task.last_error = "JobNotFound"
+                task.updated_at = time.time()
+                self.state.put_task(task)
+        return self._task_result_value(task)
+
+    def task_result(
+        self, task_ref: str, auth: Optional[AuthContext] = None
+    ) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "task:result")
+        return self._finalize_task(task_ref, auth)
+
+    def task_cancel(
+        self,
+        task_ref: str,
+        body: Dict[str, Any],
+        auth: Optional[AuthContext] = None,
+    ) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "task:cancel")
+        task = self._task(task_ref, auth)
+        if task.receipt:
+            return self._task_result_value(task)
+        if task.state == "running" and task.job_ref:
+            self.job_cancel(task.job_ref, body, auth)
+            task.state = "cancelled"
+            task.updated_at = time.time()
+            self.state.put_task(task)
+        return self._finalize_task(task_ref, auth)
+
+    def task_receipt(
+        self, task_ref: str, auth: Optional[AuthContext] = None
+    ) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "task:receipt")
+        task = self._task(task_ref, auth)
+        if task.receipt is None:
+            raise AdapterError(
+                409, "receipt_not_ready", "finalize the completed task before reading its receipt"
+            )
+        return {"task_ref": task.task_ref, "receipt": task.receipt}
+
     # Health, metrics, and administration ----------------------------
 
     def health(self) -> Dict[str, Any]:
@@ -1392,6 +1694,326 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
         volume_id = str(getattr(volume, "volume_id", name))
         mounted = VolumeMount(volume, read_only=True) if workspace.read_only else volume
         return volume, volume_id, True, {workspace.mount_path: mounted}
+
+    def _task_plan(self, plan_ref: str, auth: AuthContext) -> TaskPlanRecord:
+        if not isinstance(plan_ref, str) or not TASK_PLAN_REF_RE.fullmatch(plan_ref):
+            raise AdapterError(404, "task_plan_not_found", "task plan was not found")
+        plan = self.state.get_task_plan(plan_ref)
+        if plan is None or (plan.tenant_id != auth.tenant_id and not auth.is_admin):
+            raise AdapterError(404, "task_plan_not_found", "task plan was not found")
+        return plan
+
+    def _task(self, task_ref: str, auth: AuthContext) -> TaskRecord:
+        if not isinstance(task_ref, str) or not TASK_REF_RE.fullmatch(task_ref):
+            raise AdapterError(404, "task_not_found", "task was not found")
+        task = self.state.get_task(task_ref)
+        if task is None or (task.tenant_id != auth.tenant_id and not auth.is_admin):
+            raise AdapterError(404, "task_not_found", "task was not found")
+        if self._identity_hash(auth) != task.requester_hash and not auth.is_admin:
+            raise AdapterError(404, "task_not_found", "task was not found")
+        return task
+
+    def _task_template_for_plan(
+        self, plan: TaskPlanRecord, auth: AuthContext
+    ) -> TaskTemplateConfig:
+        template = self.task_templates.get(plan.template_name)
+        if (
+            template is None
+            or not auth.permits_task_template(template.name)
+            or not auth.permits_profile(template.profile)
+        ):
+            raise AdapterError(403, "task_template_denied", "task template is not available")
+        if template.digest != plan.template_digest:
+            raise AdapterError(
+                409,
+                "task_template_changed",
+                "task template changed after the plan was created; create a new plan",
+            )
+        return template
+
+    def _expire_plan(self, plan: TaskPlanRecord) -> None:
+        if plan.state in {"pending_approval", "approved", "ready"} and time.time() >= plan.expires_at:
+            plan.state = "expired"
+            self.state.put_task_plan(plan)
+            raise AdapterError(409, "plan_expired", "task plan has expired")
+
+    def _identity_hash(self, auth: AuthContext) -> str:
+        return hmac.new(
+            self.config.session_hmac_key.encode("utf-8"),
+            f"{auth.tenant_id}\0{auth.subject}".encode("utf-8"),
+            hashlib.sha256,
+        ).hexdigest()
+
+    @staticmethod
+    def _json_digest(value: Any) -> str:
+        raw = json.dumps(
+            value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        return hashlib.sha256(raw).hexdigest()
+
+    @staticmethod
+    def _task_plan_result(plan: TaskPlanRecord) -> Dict[str, Any]:
+        return {
+            "plan_ref": plan.plan_ref,
+            "task_template": plan.template_name,
+            "template_sha256": plan.template_digest,
+            "parameters_sha256": plan.parameters_sha256,
+            "command_sha256": plan.command_sha256,
+            "state": plan.state,
+            "approval_required": plan.approval_required,
+            "created_at": _timestamp(plan.created_at),
+            "expires_at": _timestamp(plan.expires_at),
+            "approved_at": _timestamp(plan.approved_at) if plan.approved_at else None,
+            "task_ref": plan.submitted_task_ref,
+        }
+
+    @staticmethod
+    def _task_result_value(task: TaskRecord) -> Dict[str, Any]:
+        value: Dict[str, Any] = {
+            "task_ref": task.task_ref,
+            "plan_ref": task.plan_ref,
+            "task_template": task.template_name,
+            "profile": task.profile,
+            "state": task.state,
+            "created_at": _timestamp(task.created_at),
+            "updated_at": _timestamp(task.updated_at),
+            "result_ready": task.result is not None,
+            "receipt_ready": task.receipt is not None,
+        }
+        if task.result is not None:
+            value["result"] = task.result
+        if task.receipt is not None:
+            value["receipt"] = task.receipt
+        return value
+
+    def _read_task_output(
+        self,
+        sandbox: Any,
+        template: TaskTemplateConfig,
+        output: TaskOutputConfig,
+    ) -> Tuple[Optional[Any], Dict[str, Any], Optional[str]]:
+        try:
+            entry = sandbox.files.stat(output.path)
+            declared_size = _entry_size(entry)
+        except Exception:
+            declared_size = None
+        if declared_size is not None and declared_size > output.max_bytes:
+            return (
+                None,
+                {
+                    "name": output.name,
+                    "path_sha256": hashlib.sha256(output.path.encode("utf-8")).hexdigest(),
+                    "present": True,
+                    "required": output.required,
+                    "bytes": declared_size,
+                    "exposed": False,
+                },
+                f"output {output.name!r} exceeds its size limit",
+            )
+        try:
+            raw = sandbox.files.read(output.path)
+        except Exception:
+            evidence = {
+                "name": output.name,
+                "path_sha256": hashlib.sha256(output.path.encode("utf-8")).hexdigest(),
+                "present": False,
+                "required": output.required,
+            }
+            error = f"required output {output.name!r} is missing" if output.required else None
+            return None, evidence, error
+        if isinstance(raw, bytes):
+            raw_bytes = raw
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                return None, {"name": output.name, "present": True}, "output is not UTF-8"
+        else:
+            text = str(raw)
+            raw_bytes = text.encode("utf-8")
+        evidence = {
+            "name": output.name,
+            "path_sha256": hashlib.sha256(output.path.encode("utf-8")).hexdigest(),
+            "present": True,
+            "required": output.required,
+            "bytes": len(raw_bytes),
+            "sha256": hashlib.sha256(raw_bytes).hexdigest(),
+            "exposed": output.expose == "content",
+        }
+        if len(raw_bytes) > output.max_bytes:
+            return None, evidence, f"output {output.name!r} exceeds its size limit"
+        try:
+            value: Any = json.loads(text) if output.format == "json" else text
+            template.validate_output(output, value)
+        except (json.JSONDecodeError, ValueError) as error:
+            return None, evidence, str(error)
+        return (value if output.expose == "content" else None), evidence, None
+
+    def _finalize_task(self, task_ref: str, auth: AuthContext) -> Dict[str, Any]:
+        request_id = uuid.uuid4().hex[:16]
+        with self.state.lock(f"task:{task_ref}", self.config.lock_ttl_seconds):
+            task = self._task(task_ref, auth)
+            if task.receipt is not None:
+                return self._task_result_value(task)
+            plan = self._task_plan(task.plan_ref, auth)
+            template = self.task_templates.get(task.template_name)
+            if template is None or template.digest != task.template_digest:
+                raise AdapterError(
+                    409, "task_template_changed", "cannot finalize with a changed task template"
+                )
+            output_values: Dict[str, Any]
+            output_evidence: list[Dict[str, Any]]
+            if task.state == "cleanup_pending" and task.result is not None:
+                job_state = str(task.result["execution_state"])
+                exit_code = task.result.get("exit_code")
+                sandbox_ref = task.result.get("sandbox_ref")
+                output_values = dict(task.result.get("outputs", {}))
+                output_evidence = list(task.result.get("output_evidence", []))
+                validation_errors = (
+                    ["previous output validation failed"]
+                    if task.result.get("output_validation") == "failed"
+                    else []
+                )
+            elif task.state == "setup_failed":
+                job_state = "setup_failed"
+                exit_code = None
+                sandbox_ref = None
+                output_values = {}
+                output_evidence = []
+                validation_errors = []
+            else:
+                if not task.job_ref or not task.lease_ref:
+                    raise AdapterError(409, "task_not_ready", "task has not started")
+                job, record = self._job(task.job_ref, auth)
+                self._refresh_job(job, record)
+                if job.state in {"running", "starting"}:
+                    raise AdapterError(409, "task_running", "task is still running")
+                task.state = job.state
+                job_state = job.state
+                exit_code = job.exit_code
+                sandbox_ref = record.sandbox_ref
+                output_values = {}
+                output_evidence = []
+                validation_errors = []
+                if job_state == "succeeded":
+                    sandbox = self._sandbox(record)
+                    for output in template.outputs:
+                        value, evidence, error = self._read_task_output(
+                            sandbox, template, output
+                        )
+                        output_evidence.append(evidence)
+                        if value is not None:
+                            output_values[output.name] = value
+                        if error:
+                            validation_errors.append(error)
+
+            cleanup = task.cleanup_status
+            if task.lease_ref and cleanup != "verified":
+                try:
+                    self.release(task.lease_ref, {"action": "kill", "request_id": request_id}, auth)
+                    cleanup = "verified"
+                except Exception as error:
+                    cleanup = "pending"
+                    task.last_error = type(error).__name__
+            task.cleanup_status = cleanup
+            if validation_errors:
+                final_state = "output_validation_failed"
+            elif job_state == "succeeded":
+                final_state = "succeeded"
+            else:
+                final_state = job_state
+            task.updated_at = time.time()
+            task.result = {
+                "state": final_state,
+                "execution_state": job_state,
+                "exit_code": exit_code,
+                "sandbox_ref": sandbox_ref,
+                "outputs": output_values,
+                "output_evidence": output_evidence,
+                "output_validation": "ok" if not validation_errors else "failed",
+                "cleanup": cleanup,
+            }
+            if cleanup == "pending":
+                task.state = "cleanup_pending"
+                self.state.put_task(task)
+                return self._task_result_value(task)
+            task.state = final_state
+            receipt_payload = {
+                "version": "1",
+                "issuer": "cubesandbox-agent-adapter",
+                "task_ref": task.task_ref,
+                "plan_ref": task.plan_ref,
+                "tenant_hash": _digest(task.tenant_id, 32),
+                "requester_hash": task.requester_hash,
+                "approver_hash": plan.approved_by_hash,
+                "task_template": task.template_name,
+                "template_sha256": task.template_digest,
+                "profile": task.profile,
+                "parameters_sha256": plan.parameters_sha256,
+                "command_sha256": plan.command_sha256,
+                "sandbox_ref": sandbox_ref,
+                "state": final_state,
+                "exit_code": exit_code,
+                "outputs": output_evidence,
+                "cleanup": cleanup,
+                "created_at": _timestamp(task.created_at),
+                "completed_at": _timestamp(task.updated_at),
+            }
+            task.receipt = self._sign_receipt(receipt_payload)
+            self.state.put_task(task)
+        self._audit_task(
+            auth,
+            "task_finalize",
+            request_id,
+            "ok" if final_state == "succeeded" else "error",
+            template,
+            plan_ref=task.plan_ref,
+            task_ref=task.task_ref,
+            task_state=final_state,
+            cleanup=cleanup,
+        )
+        return self._task_result_value(task)
+
+    def _sign_receipt(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        encoded = json.dumps(
+            payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")
+        key = self.config.effective_receipt_hmac_key.encode("utf-8")
+        signature = base64.urlsafe_b64encode(
+            hmac.new(key, encoded, hashlib.sha256).digest()
+        ).decode("ascii").rstrip("=")
+        return {
+            "payload": payload,
+            "signature": {
+                "alg": "HS256",
+                "kid": "hmac-" + hashlib.sha256(key).hexdigest()[:12],
+                "value": signature,
+            },
+        }
+
+    def _audit_task(
+        self,
+        auth: AuthContext,
+        action: str,
+        request_id: str,
+        outcome: str,
+        template: TaskTemplateConfig,
+        **extra: Any,
+    ) -> None:
+        event = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "tenant_hash": _digest(auth.tenant_id, 16),
+            "runtime": "mcp",
+            "action": action,
+            "profile": template.profile,
+            "task_template": template.name,
+            "request_id": request_id,
+            "outcome": outcome,
+            **{key: value for key, value in extra.items() if value is not None},
+        }
+        self.audit.emit(event)
+        self.metrics.observe(
+            action, outcome, 0.0, runtime="mcp", profile=template.profile
+        )
 
     def _destroy_owned_volume(self, record: LeaseRecord) -> None:
         if not record.volume_owned or not record.volume_id:

@@ -106,6 +106,8 @@ class CoreFeatureTest(unittest.TestCase):
         )
         job = adapter.state.get_job(started["job_ref"])
         sandbox = FakeSandbox.created[0]
+        self.assertIn("&& { nohup setsid", sandbox.commands.last_command)
+        self.assertIn("& echo $!; }", sandbox.commands.last_command)
         self.assertIn("timeout --signal=TERM", sandbox.commands.last_command)
         sandbox.files.write(job.stdout_path, "done")
         sandbox.files.write(job.stderr_path, "")

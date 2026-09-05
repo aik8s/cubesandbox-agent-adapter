@@ -55,7 +55,7 @@ const object = (properties, required = []) => ({
   required,
 });
 
-function tool(name, description, parameters, run) {
+function tool(name, description, parameters, run, requiresLease = true) {
   return {
     name,
     description,
@@ -63,7 +63,7 @@ function tool(name, description, parameters, run) {
     output,
     timeoutMs: 125000,
     async execute(args, exec) {
-      const lease = await acquire(this?.config || {}, exec);
+      const lease = requiresLease ? await acquire(this?.config || {}, exec) : null;
       return run(lease, args, exec);
     },
   };
@@ -73,7 +73,7 @@ export function apply(ctx, config = {}) {
   ctx.systemPrompt.section({
     name: "tool:cube-adapter",
     order: 104,
-    text: "Use the cube_* tools for shell, files, durable jobs, and checkpoints. They share one policy-controlled CubeSandbox MicroVM per DSH session. Call cube_release when finished.",
+    text: "Use cube_task_* for approved trusted tasks. Use the other cube_* tools only when the identity allows general execution. Approval always uses a separate production identity.",
   });
 
   const register = (definition) => {
@@ -182,13 +182,55 @@ export function apply(ctx, config = {}) {
         { action: args.action || "pause" },
       ],
     ],
+    [
+      "cube_task_plan",
+      "Plan a server-owned, schema-validated trusted task without executing it.",
+      object({ template: { type: "string" }, parameters: { type: "object" } }, ["template", "parameters"]),
+      (_lease, { template, parameters }) => ["/v1/tasks/plan", { template, parameters }],
+      false,
+    ],
+    [
+      "cube_task_submit",
+      "Submit an independently approved trusted task plan.",
+      object({ plan_ref: { type: "string" } }, ["plan_ref"]),
+      (_lease, { plan_ref }) => [`/v1/task-plans/${encodeURIComponent(plan_ref)}/submit`, {}],
+      false,
+    ],
+    [
+      "cube_task_status",
+      "Read trusted task state without raw process output.",
+      object({ task_ref: { type: "string" } }, ["task_ref"]),
+      (_lease, { task_ref }) => [`/v1/tasks/${encodeURIComponent(task_ref)}/status`, {}],
+      false,
+    ],
+    [
+      "cube_task_result",
+      "Validate allowlisted outputs, destroy the MicroVM, and return a receipt.",
+      object({ task_ref: { type: "string" } }, ["task_ref"]),
+      (_lease, { task_ref }) => [`/v1/tasks/${encodeURIComponent(task_ref)}/result`, {}],
+      false,
+    ],
+    [
+      "cube_task_cancel",
+      "Cancel and finalize a trusted task.",
+      object({ task_ref: { type: "string" } }, ["task_ref"]),
+      (_lease, { task_ref }) => [`/v1/tasks/${encodeURIComponent(task_ref)}/cancel`, {}],
+      false,
+    ],
+    [
+      "cube_task_receipt",
+      "Return the signed receipt for a finalized trusted task.",
+      object({ task_ref: { type: "string" } }, ["task_ref"]),
+      (_lease, { task_ref }) => [`/v1/tasks/${encodeURIComponent(task_ref)}/receipt`, {}],
+      false,
+    ],
   ];
-  const disposers = definitions.map(([toolName, description, parameters, endpoint]) =>
+  const disposers = definitions.map(([toolName, description, parameters, endpoint, requiresLease]) =>
     register(
       tool(toolName, description, parameters, async (lease, args, exec) => {
         const [path, body] = endpoint(lease, args);
         return request(config, path, body, exec.signal);
-      }),
+      }, requiresLease !== false),
     ),
   );
   return () => disposers.reverse().forEach((dispose) => dispose());

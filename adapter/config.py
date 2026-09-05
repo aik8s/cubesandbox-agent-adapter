@@ -345,6 +345,8 @@ class AuthContext:
     roles: frozenset[str] = frozenset({"runtime"})
     allowed_profiles: frozenset[str] = frozenset()
     allowed_runtimes: frozenset[str] = frozenset()
+    allowed_actions: frozenset[str] = frozenset({"*"})
+    allowed_task_templates: frozenset[str] = frozenset({"*"})
 
     @property
     def is_admin(self) -> bool:
@@ -355,6 +357,27 @@ class AuthContext:
 
     def permits_runtime(self, name: str) -> bool:
         return not self.allowed_runtimes or name in self.allowed_runtimes
+
+    def permits_action(self, name: str) -> bool:
+        if self.is_admin:
+            return True
+        return any(
+            rule == "*"
+            or rule == name
+            or (rule.endswith(":*") and name.startswith(rule[:-1]))
+            for rule in self.allowed_actions
+        )
+
+    def permits_task_template(self, name: str) -> bool:
+        return (
+            self.is_admin
+            or "*" in self.allowed_task_templates
+            or name in self.allowed_task_templates
+        )
+
+    @property
+    def can_approve_tasks(self) -> bool:
+        return self.is_admin or "approver" in self.roles
 
 
 @dataclass(frozen=True)
@@ -387,6 +410,8 @@ class AdapterConfig:
     max_command_seconds: int = 120
     audit_ui: bool = False
     profiles_file: Optional[str] = None
+    task_templates_file: Optional[str] = None
+    receipt_hmac_key: Optional[str] = field(default=None, repr=False)
     state_backend_url: Optional[str] = None
     state_encryption_key: Optional[str] = field(default=None, repr=False)
     state_prefix: str = "cube-agent-adapter"
@@ -438,6 +463,11 @@ class AdapterConfig:
         template = os.environ.get("CUBE_TEMPLATE_ID", "")
         if not template:
             raise RuntimeError("CUBE_TEMPLATE_ID is required")
+        receipt_hmac_key = os.environ.get("CUBE_ADAPTER_RECEIPT_HMAC_KEY") or None
+        if receipt_hmac_key is not None and len(receipt_hmac_key) < 32:
+            raise RuntimeError(
+                "CUBE_ADAPTER_RECEIPT_HMAC_KEY must contain at least 32 characters"
+            )
 
         encryption_key = os.environ.get("CUBE_ADAPTER_STATE_ENCRYPTION_KEY") or None
         state_url = os.environ.get("CUBE_ADAPTER_STATE_BACKEND_URL") or None
@@ -503,6 +533,8 @@ class AdapterConfig:
             ),
             audit_ui=os.environ.get("CUBE_ADAPTER_AUDIT_UI", "0") == "1",
             profiles_file=os.environ.get("CUBE_ADAPTER_PROFILES_FILE") or None,
+            task_templates_file=os.environ.get("CUBE_ADAPTER_TASK_TEMPLATES_FILE") or None,
+            receipt_hmac_key=receipt_hmac_key,
             state_backend_url=state_url,
             state_encryption_key=encryption_key,
             state_prefix=os.environ.get("CUBE_ADAPTER_STATE_PREFIX", "cube-agent-adapter"),
@@ -540,6 +572,17 @@ class AdapterConfig:
             sandbox_timeout_seconds=self.sandbox_timeout_seconds,
             max_command_seconds=self.max_command_seconds,
         )
+
+    def task_templates(
+        self, profiles: Mapping[str, ProfileConfig]
+    ) -> Dict[str, Any]:
+        from .task_config import load_task_templates
+
+        return load_task_templates(self.task_templates_file, profiles=profiles)
+
+    @property
+    def effective_receipt_hmac_key(self) -> str:
+        return self.receipt_hmac_key or self.session_hmac_key
 
 
 def _load_token_principals(path: Optional[str]) -> tuple[TokenPrincipal, ...]:
@@ -586,6 +629,18 @@ def _load_token_principals(path: Optional[str]) -> tuple[TokenPrincipal, ...]:
                     allowed_runtimes=frozenset(
                         _string_tuple(
                             entry.get("allowed_runtimes"), field_name="allowed_runtimes"
+                        )
+                    ),
+                    allowed_actions=frozenset(
+                        _string_tuple(
+                            entry.get("allowed_actions", ["*"]),
+                            field_name="allowed_actions",
+                        )
+                    ),
+                    allowed_task_templates=frozenset(
+                        _string_tuple(
+                            entry.get("allowed_task_templates", ["*"]),
+                            field_name="allowed_task_templates",
                         )
                     ),
                 ),

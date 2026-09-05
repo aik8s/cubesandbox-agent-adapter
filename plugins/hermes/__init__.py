@@ -16,6 +16,8 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 LEASE_REF_RE = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 JOB_REF_RE = re.compile(r"^job_[a-f0-9]{20}$")
 CHECKPOINT_REF_RE = re.compile(r"^checkpoint_[a-f0-9]{20}$")
+PLAN_REF_RE = re.compile(r"^plan_[a-f0-9]{20}$")
+TASK_REF_RE = re.compile(r"^task_[a-f0-9]{20}$")
 
 
 class AdapterClientError(RuntimeError):
@@ -161,6 +163,44 @@ TOOL_SCHEMAS.update(
     }
 )
 
+TOOL_SCHEMAS.update(
+    {
+        "cube_task_plan": {
+            "name": "cube_task_plan",
+            "description": "Plan a server-owned, schema-validated trusted task.",
+            "parameters": _object(
+                {"template": {"type": "string"}, "parameters": {"type": "object"}},
+                ["template", "parameters"],
+            ),
+        },
+        "cube_task_submit": {
+            "name": "cube_task_submit",
+            "description": "Submit an independently approved trusted task plan.",
+            "parameters": _object({"plan_ref": {"type": "string"}}, ["plan_ref"]),
+        },
+        "cube_task_status": {
+            "name": "cube_task_status",
+            "description": "Read trusted task state without raw process output.",
+            "parameters": _object({"task_ref": {"type": "string"}}, ["task_ref"]),
+        },
+        "cube_task_result": {
+            "name": "cube_task_result",
+            "description": "Validate outputs, clean the MicroVM, and return a receipt.",
+            "parameters": _object({"task_ref": {"type": "string"}}, ["task_ref"]),
+        },
+        "cube_task_cancel": {
+            "name": "cube_task_cancel",
+            "description": "Cancel and finalize a trusted task.",
+            "parameters": _object({"task_ref": {"type": "string"}}, ["task_ref"]),
+        },
+        "cube_task_receipt": {
+            "name": "cube_task_receipt",
+            "description": "Return the signed receipt for a finalized trusted task.",
+            "parameters": _object({"task_ref": {"type": "string"}}, ["task_ref"]),
+        },
+    }
+)
+
 
 def _settings(ctx: Any) -> Dict[str, str]:
     adapter_url = str(
@@ -269,32 +309,52 @@ def _handler(
 ) -> Callable[[Dict[str, Any]], str]:
     def run(args: Dict[str, Any], **kwargs: Any) -> str:
         try:
-            lease = _acquire(settings, kwargs)
             body = dict(args or {})
-            if operation in {"exec", "read", "write", "list", "status", "release"}:
-                path = f"/v1/leases/{lease['lease_ref']}/{operation}"
-            elif operation == "job_start":
-                path = f"/v1/leases/{lease['lease_ref']}/jobs"
-            elif operation in {"job_status", "job_output", "job_cancel"}:
-                job_ref = body.pop("job_ref", "")
-                if not isinstance(job_ref, str) or not JOB_REF_RE.fullmatch(job_ref):
-                    raise AdapterClientError("invalid Cube Adapter job reference")
-                suffix = operation.removeprefix("job_")
-                path = f"/v1/jobs/{job_ref}/{suffix}"
-            elif operation == "checkpoint":
-                path = f"/v1/leases/{lease['lease_ref']}/checkpoints"
-            elif operation in {"rollback", "fork"}:
-                checkpoint_ref = body.pop("checkpoint_ref", "")
-                if not isinstance(checkpoint_ref, str) or not CHECKPOINT_REF_RE.fullmatch(
-                    checkpoint_ref
-                ):
-                    raise AdapterClientError("invalid Cube Adapter checkpoint reference")
-                path = (
-                    f"/v1/leases/{lease['lease_ref']}/checkpoints/"
-                    f"{checkpoint_ref}/{operation}"
-                )
-            else:  # pragma: no cover - registration invariant
-                raise AdapterClientError("unsupported Cube Adapter operation")
+            if operation == "task_plan":
+                path = "/v1/tasks/plan"
+            elif operation == "task_submit":
+                plan_ref = body.pop("plan_ref", "")
+                if not isinstance(plan_ref, str) or not PLAN_REF_RE.fullmatch(plan_ref):
+                    raise AdapterClientError("invalid Cube Adapter plan reference")
+                path = f"/v1/task-plans/{plan_ref}/submit"
+                body = {}
+            elif operation in {
+                "task_status",
+                "task_result",
+                "task_cancel",
+                "task_receipt",
+            }:
+                task_ref = body.pop("task_ref", "")
+                if not isinstance(task_ref, str) or not TASK_REF_RE.fullmatch(task_ref):
+                    raise AdapterClientError("invalid Cube Adapter task reference")
+                path = f"/v1/tasks/{task_ref}/{operation.removeprefix('task_')}"
+                body = {}
+            else:
+                lease = _acquire(settings, kwargs)
+                if operation in {"exec", "read", "write", "list", "status", "release"}:
+                    path = f"/v1/leases/{lease['lease_ref']}/{operation}"
+                elif operation == "job_start":
+                    path = f"/v1/leases/{lease['lease_ref']}/jobs"
+                elif operation in {"job_status", "job_output", "job_cancel"}:
+                    job_ref = body.pop("job_ref", "")
+                    if not isinstance(job_ref, str) or not JOB_REF_RE.fullmatch(job_ref):
+                        raise AdapterClientError("invalid Cube Adapter job reference")
+                    suffix = operation.removeprefix("job_")
+                    path = f"/v1/jobs/{job_ref}/{suffix}"
+                elif operation == "checkpoint":
+                    path = f"/v1/leases/{lease['lease_ref']}/checkpoints"
+                elif operation in {"rollback", "fork"}:
+                    checkpoint_ref = body.pop("checkpoint_ref", "")
+                    if not isinstance(checkpoint_ref, str) or not CHECKPOINT_REF_RE.fullmatch(
+                        checkpoint_ref
+                    ):
+                        raise AdapterClientError("invalid Cube Adapter checkpoint reference")
+                    path = (
+                        f"/v1/leases/{lease['lease_ref']}/checkpoints/"
+                        f"{checkpoint_ref}/{operation}"
+                    )
+                else:  # pragma: no cover - registration invariant
+                    raise AdapterClientError("unsupported Cube Adapter operation")
             if operation == "release":
                 body = {"action": body.get("action") or "pause"}
             elif operation in {"status", "job_status", "job_cancel", "rollback"}:
@@ -339,6 +399,12 @@ def register(ctx: Any) -> None:
         ("cube_rollback", "rollback"),
         ("cube_fork", "fork"),
         ("cube_release", "release"),
+        ("cube_task_plan", "task_plan"),
+        ("cube_task_submit", "task_submit"),
+        ("cube_task_status", "task_status"),
+        ("cube_task_result", "task_result"),
+        ("cube_task_cancel", "task_cancel"),
+        ("cube_task_receipt", "task_receipt"),
     ):
         ctx.register_tool(
             name=name,

@@ -1,0 +1,33 @@
+image:
+  repository: ghcr.io/aik8s/cubesandbox-agent-adapter
+  tag: v0.4.0
+  pullPolicy: IfNotPresent
+
+auth:
+  existingSecret: trusted-acceptance-auth
+  sharedTokenEnabled: false
+  hmacKey: hmac-key
+  receiptHmacKey: receipt-hmac-key
+  tokenPrincipalsKey: principals.json
+
+cube:
+  apiUrl: http://cube-api.cube-system.svc:3000
+  proxyHost: cube-proxy.cube-system.svc
+  proxyPort: 80
+  templateId: agent-code
+
+profiles:
+  existingConfigMap: trusted-acceptance-profiles
+  key: profiles.yaml
+
+taskTemplates:
+  enabled: true
+  existingConfigMap: trusted-acceptance-tasks
+  key: task-templates.yaml
+
+adapter:
+  auditUi: true
+  adminEnabled: false
+
+networkPolicy:
+  enabled: false

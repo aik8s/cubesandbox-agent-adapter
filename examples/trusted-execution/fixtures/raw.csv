@@ -1,0 +1,6 @@
+id,event_time,email,phone,value
+ 001 ,2026-09-01T10:00:00Z,alice@example.invalid,000-0001, 12
+001,2026-09-01T10:00:00Z,alice@example.invalid,000-0001,12
+002,2026-09-01T10:01:00Z,bob@example.invalid,000-0002,18
+003,,carol@example.invalid,000-0003,21
+004,2026-09-01T10:03:00Z,dave@example.invalid,000-0004, 25

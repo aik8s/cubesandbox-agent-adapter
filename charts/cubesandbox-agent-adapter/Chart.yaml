@@ -2,8 +2,8 @@ apiVersion: v2
 name: cubesandbox-agent-adapter
 description: Policy-controlled CubeSandbox execution adapter for Agent runtimes
 type: application
-version: 0.3.0
-appVersion: "0.3.0"
+version: 0.4.0
+appVersion: "0.4.0"
 home: https://github.com/aik8s/cubesandbox-agent-adapter
 sources:
   - https://github.com/aik8s/cubesandbox-agent-adapter

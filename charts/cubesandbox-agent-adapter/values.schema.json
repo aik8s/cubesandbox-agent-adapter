@@ -20,6 +20,7 @@
         "sharedTokenEnabled": { "type": "boolean" },
         "tokenKey": { "type": "string", "minLength": 1 },
         "hmacKey": { "type": "string", "minLength": 1 },
+        "receiptHmacKey": { "type": "string" },
         "tokenPrincipalsKey": { "type": "string" }
       }
     },
@@ -61,6 +62,16 @@
       "type": "object",
       "required": ["existingConfigMap", "key", "data"],
       "properties": {
+        "existingConfigMap": { "type": "string" },
+        "key": { "type": "string", "minLength": 1 },
+        "data": { "type": "object" }
+      }
+    },
+    "taskTemplates": {
+      "type": "object",
+      "required": ["enabled", "existingConfigMap", "key", "data"],
+      "properties": {
+        "enabled": { "type": "boolean" },
         "existingConfigMap": { "type": "string" },
         "key": { "type": "string", "minLength": 1 },
         "data": { "type": "object" }

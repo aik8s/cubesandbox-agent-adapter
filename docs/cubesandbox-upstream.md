@@ -41,10 +41,11 @@ State was re-checked through the GitHub API on 2026-09-02.
 [#244](https://github.com/TencentCloud/CubeSandbox/issues/244) remains open. The
 Hermes Agent and DeepSeek Harness guide slots were claimed on 2026-08-29, and
 bilingual guide drafts have been prepared against the upstream template. They
-continue to cite the actually published v0.2.0 evidence; the new v0.3.0 feature
-set should be substituted only after this repository publishes and re-runs the
-real CubeSandbox acceptance evidence. No external pull request is created from
-this working tree automatically.
+currently cite the v0.2.0 evidence. The v0.4.0 release adds refreshed real
+CubeSandbox acceptance evidence for trusted tasks across OpenClaw, DSH, Codex,
+and Hermes; update the upstream drafts to cite it before opening an external
+pull request. No external pull request is created from this working tree
+automatically.
 
 ## Feature decisions / 功能决策
 

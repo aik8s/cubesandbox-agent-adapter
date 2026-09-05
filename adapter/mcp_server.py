@@ -221,6 +221,38 @@ def build_mcp_server(
         return api.post(f"/v1/jobs/{api.segment(job_ref)}/cancel", {})
 
     @mcp.tool()
+    def cube_task_plan(template: str, parameters: dict) -> dict:
+        """Plan a schema-validated trusted task without executing it."""
+        return api.post(
+            "/v1/tasks/plan", {"template": template, "parameters": parameters}
+        )
+
+    @mcp.tool()
+    def cube_task_submit(plan_ref: str) -> dict:
+        """Submit a ready or independently approved trusted task plan."""
+        return api.post(f"/v1/task-plans/{api.segment(plan_ref)}/submit", {})
+
+    @mcp.tool()
+    def cube_task_status(task_ref: str) -> dict:
+        """Read trusted task state without exposing raw process output."""
+        return api.post(f"/v1/tasks/{api.segment(task_ref)}/status", {})
+
+    @mcp.tool()
+    def cube_task_result(task_ref: str) -> dict:
+        """Finalize a completed task, release its microVM, and return allowlisted outputs."""
+        return api.post(f"/v1/tasks/{api.segment(task_ref)}/result", {})
+
+    @mcp.tool()
+    def cube_task_cancel(task_ref: str) -> dict:
+        """Cancel and finalize a trusted task."""
+        return api.post(f"/v1/tasks/{api.segment(task_ref)}/cancel", {})
+
+    @mcp.tool()
+    def cube_task_receipt(task_ref: str) -> dict:
+        """Return the signed execution receipt for a finalized trusted task."""
+        return api.post(f"/v1/tasks/{api.segment(task_ref)}/receipt", {})
+
+    @mcp.tool()
     def cube_checkpoint(lease_ref: str, name: Optional[str] = None) -> dict:
         """Create a gated microVM checkpoint for a lease."""
         return api.post(

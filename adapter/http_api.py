@@ -35,6 +35,8 @@ ALLOWED_FIELDS: Dict[str, frozenset[str]] = {
     "pty_kill": frozenset({"request_id"}),
     "checkpoint_create": frozenset({"name", "request_id"}),
     "checkpoint_action": frozenset({"branch", "request_id"}),
+    "task_plan": frozenset({"template", "parameters", "request_id"}),
+    "task_approve": frozenset({"decision", "reason", "request_id"}),
     "empty": frozenset({"request_id"}),
 }
 
@@ -81,35 +83,57 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
 
                 auth = self._auth(adapter)
                 if path == "/v1/leases":
+                    adapter.authorize(auth, "lease:list")
                     self._json(200, adapter.list_leases(auth))
+                    return
+                if path == "/v1/task-templates":
+                    self._json(200, adapter.list_task_templates(auth))
+                    return
+                match = re.fullmatch(r"/v1/task-plans/([^/]+)", path)
+                if match:
+                    self._json(200, adapter.task_plan_status(match.group(1), auth))
                     return
                 match = re.fullmatch(r"/v1/leases/([^/]+)/status", path)
                 if match:
+                    adapter.authorize(auth, "lease:status")
                     self._json(200, adapter.lease_status(match.group(1), {}, auth))
                     return
                 match = re.fullmatch(r"/v1/leases/([^/]+)/checkpoints", path)
                 if match:
+                    adapter.authorize(auth, "checkpoint:list")
                     self._json(200, adapter.checkpoint_list(match.group(1), auth))
                     return
                 match = re.fullmatch(r"/v1/jobs/([^/]+)/status", path)
                 if match:
+                    adapter.authorize(auth, "job:status")
                     self._json(200, adapter.job_status(match.group(1), auth))
                     return
                 match = re.fullmatch(r"/v1/jobs/([^/]+)/events", path)
                 if match:
+                    adapter.authorize(auth, "job:output")
                     self._sse(
                         adapter.iter_job_events(match.group(1), auth, timeout=self._sse_timeout(parsed.query))
                     )
                     return
                 match = re.fullmatch(r"/v1/ptys/([^/]+)/status", path)
                 if match:
+                    adapter.authorize(auth, "pty:status")
                     self._json(200, adapter.pty_status(match.group(1), auth))
                     return
                 match = re.fullmatch(r"/v1/ptys/([^/]+)/events", path)
                 if match:
+                    adapter.authorize(auth, "pty:events")
                     self._sse(
                         adapter.iter_pty_events(match.group(1), auth, timeout=self._sse_timeout(parsed.query))
                     )
+                    return
+                match = re.fullmatch(r"/v1/tasks/([^/]+)/status", path)
+                if match:
+                    self._json(200, adapter.task_status(match.group(1), auth))
+                    return
+                match = re.fullmatch(r"/v1/tasks/([^/]+)/receipt", path)
+                if match:
+                    self._json(200, adapter.task_receipt(match.group(1), auth))
                     return
                 raise AdapterError(404, "not_found", "route not found")
             except AdapterError as error:
@@ -127,12 +151,44 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                 path = urlparse(self.path).path
                 if path == "/v1/leases/acquire":
                     body = self._body("acquire")
+                    adapter.authorize(auth, "lease:acquire")
                     self._json(200, adapter.acquire(body, auth))
                     return
                 if path == "/v1/admin/gc":
                     body = self._body("empty")
                     del body
+                    adapter.authorize(auth, "admin:gc")
                     self._json(200, adapter.force_gc(auth))
+                    return
+                if path == "/v1/tasks/plan":
+                    self._json(201, adapter.task_plan(self._body("task_plan"), auth))
+                    return
+                match = re.fullmatch(r"/v1/task-plans/([^/]+)/(approve|submit)", path)
+                if match:
+                    plan_ref, action = match.groups()
+                    body = self._body("task_approve" if action == "approve" else "empty")
+                    value = (
+                        adapter.task_approve(plan_ref, body, auth)
+                        if action == "approve"
+                        else adapter.task_submit(plan_ref, body, auth)
+                    )
+                    self._json(202 if action == "submit" else 200, value)
+                    return
+                match = re.fullmatch(
+                    r"/v1/tasks/([^/]+)/(status|result|cancel|receipt)", path
+                )
+                if match:
+                    task_ref, action = match.groups()
+                    body = self._body("empty")
+                    if action == "status":
+                        value = adapter.task_status(task_ref, auth)
+                    elif action == "result":
+                        value = adapter.task_result(task_ref, auth)
+                    elif action == "cancel":
+                        value = adapter.task_cancel(task_ref, body, auth)
+                    else:
+                        value = adapter.task_receipt(task_ref, auth)
+                    self._json(200, value)
                     return
 
                 match = re.fullmatch(
@@ -142,6 +198,21 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                 if match:
                     lease_ref, action = match.groups()
                     body = self._body(action)
+                    adapter.authorize(
+                        auth,
+                        {
+                            "exec": "exec:run",
+                            "read": "file:read",
+                            "write": "file:write",
+                            "release": "lease:release",
+                            "status": "lease:status",
+                            "list": "file:list",
+                            "stat": "file:stat",
+                            "mkdir": "file:mkdir",
+                            "remove": "file:remove",
+                            "move": "file:move",
+                        }[action],
+                    )
                     handlers: Dict[
                         str, Callable[[str, Dict[str, Any], AuthContext], Dict[str, Any]]
                     ] = {
@@ -164,6 +235,7 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                 )
                 if match:
                     lease_ref, action = match.groups()
+                    adapter.authorize(auth, "artifact:" + action)
                     key = "artifact_" + action
                     body = self._body(key)
                     handler = (
@@ -177,11 +249,13 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                 match = re.fullmatch(r"/v1/leases/([^/]+)/jobs", path)
                 if match:
                     body = self._body("job_start")
+                    adapter.authorize(auth, "job:start")
                     self._json(202, adapter.job_start(match.group(1), body, auth))
                     return
                 match = re.fullmatch(r"/v1/jobs/([^/]+)/(status|output|cancel)", path)
                 if match:
                     job_ref, action = match.groups()
+                    adapter.authorize(auth, "job:" + action)
                     body = self._body(
                         "job_output" if action == "output" else "job_cancel" if action == "cancel" else "empty"
                     )
@@ -197,11 +271,13 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                 match = re.fullmatch(r"/v1/leases/([^/]+)/ptys", path)
                 if match:
                     body = self._body("pty_create")
+                    adapter.authorize(auth, "pty:create")
                     self._json(201, adapter.pty_create(match.group(1), body, auth))
                     return
                 match = re.fullmatch(r"/v1/ptys/([^/]+)/(input|resize|kill)", path)
                 if match:
                     pty_ref, action = match.groups()
+                    adapter.authorize(auth, "pty:" + action)
                     body = self._body("pty_" + action)
                     pty_handlers: Dict[
                         str, Callable[[str, Dict[str, Any], AuthContext], Dict[str, Any]]
@@ -216,6 +292,7 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                 match = re.fullmatch(r"/v1/leases/([^/]+)/checkpoints", path)
                 if match:
                     body = self._body("checkpoint_create")
+                    adapter.authorize(auth, "checkpoint:create")
                     self._json(201, adapter.checkpoint_create(match.group(1), body, auth))
                     return
                 match = re.fullmatch(
@@ -224,6 +301,7 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                 )
                 if match:
                     lease_ref, checkpoint_ref, action = match.groups()
+                    adapter.authorize(auth, "checkpoint:" + action)
                     body = self._body("checkpoint_action")
                     checkpoint_handlers: Dict[
                         str,

@@ -1,0 +1,10 @@
+只使用 CubeSandbox Adapter 暴露的 cube_task_* 工具，不要调用主机 shell、文件、浏览器或普通 cube_exec 工具。
+
+请完成一次可信任务实测：
+1. 调用 cube_task_plan，template 使用 trusted-auto，parameters.message 使用 safe-application-client-proof。
+2. 调用 cube_task_submit。
+3. 只用 cube_task_status 轮询到终态。
+4. 调用 cube_task_result，再调用 cube_task_receipt。
+5. 最后用简短清单列出实际调用的工具、任务状态、cleanup 状态和 receipt algorithm。
+
+不要输出令牌、Adapter 地址、完整 Plan/Task/Sandbox 标识或内部网络信息。

@@ -5,7 +5,26 @@
     "subject": "team-a-runtime",
     "roles": ["runtime"],
     "allowed_profiles": ["offline-code", "persistent-code"],
-    "allowed_runtimes": ["openclaw", "dsh", "hermes", "mcp"]
+    "allowed_runtimes": ["openclaw", "dsh", "hermes", "mcp"],
+    "allowed_actions": ["lease:*", "exec:run", "file:*", "artifact:*", "job:*", "checkpoint:*"]
+  },
+  {
+    "token": "replace-with-a-task-only-agent-token",
+    "tenant_id": "team-a",
+    "subject": "team-a-local-agent",
+    "roles": ["runtime"],
+    "allowed_profiles": ["trusted-training", "trusted-data-cleaning"],
+    "allowed_runtimes": ["mcp"],
+    "allowed_actions": ["task:plan", "task:submit", "task:status", "task:result", "task:cancel", "task:receipt"],
+    "allowed_task_templates": ["train-logistic", "clean-csv"]
+  },
+  {
+    "token": "replace-with-an-independent-approver-token",
+    "tenant_id": "team-a",
+    "subject": "team-a-approver",
+    "roles": ["approver"],
+    "allowed_actions": ["task:approve"],
+    "allowed_task_templates": ["train-logistic", "clean-csv"]
   },
   {
     "token": "replace-with-a-different-random-admin-token",

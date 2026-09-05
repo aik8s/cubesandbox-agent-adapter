@@ -73,12 +73,23 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.auth.existingSecret }}
                   key: {{ .Values.auth.hmacKey }}
+            {{- if .Values.auth.receiptHmacKey }}
+            - name: CUBE_ADAPTER_RECEIPT_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.auth.existingSecret }}
+                  key: {{ .Values.auth.receiptHmacKey }}
+            {{- end }}
             {{- if .Values.auth.tokenPrincipalsKey }}
             - name: CUBE_ADAPTER_TOKENS_FILE
               value: /etc/cube-adapter/auth/principals.json
             {{- end }}
             - name: CUBE_TEMPLATE_ID
               value: {{ .Values.cube.templateId | quote }}
+            {{- if .Values.taskTemplates.enabled }}
+            - name: CUBE_ADAPTER_TASK_TEMPLATES_FILE
+              value: /etc/cube-adapter/tasks/{{ .Values.taskTemplates.key }}
+            {{- end }}
             - name: CUBE_API_URL
               value: {{ .Values.cube.apiUrl | quote }}
             - name: CUBE_PROXY_NODE_IP
@@ -180,6 +191,11 @@ spec:
             - name: profiles
               mountPath: /etc/cube-adapter/profiles
               readOnly: true
+            {{- if .Values.taskTemplates.enabled }}
+            - name: task-templates
+              mountPath: /etc/cube-adapter/tasks
+              readOnly: true
+            {{- end }}
             {{- if .Values.auth.tokenPrincipalsKey }}
             - name: auth-principals
               mountPath: /etc/cube-adapter/auth
@@ -212,6 +228,14 @@ spec:
             items:
               - key: {{ .Values.profiles.key }}
                 path: {{ .Values.profiles.key }}
+        {{- if .Values.taskTemplates.enabled }}
+        - name: task-templates
+          configMap:
+            name: {{ default (printf "%s-task-templates" (include "cubesandbox-agent-adapter.fullname" .)) .Values.taskTemplates.existingConfigMap }}
+            items:
+              - key: {{ .Values.taskTemplates.key }}
+                path: {{ .Values.taskTemplates.key }}
+        {{- end }}
         {{- if .Values.auth.tokenPrincipalsKey }}
         - name: auth-principals
           secret:

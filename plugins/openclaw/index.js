@@ -67,6 +67,22 @@ function dynamicTool(definition, execute) {
   };
 }
 
+function directTool(definition, execute) {
+  return {
+    ...definition,
+    factory: ({ config, toolContext }) => ({
+      ...definition,
+      execute: async (_toolCallId, params, signal) => {
+        const result = await execute(config, toolContext, params, signal);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          details: result,
+        };
+      },
+    }),
+  };
+}
+
 const object = (properties, required = []) => ({
   type: "object",
   additionalProperties: false,
@@ -206,6 +222,54 @@ const definitions = [
   },
 ];
 
+const taskDefinitions = [
+  {
+    name: "cube_task_plan",
+    label: "CubeSandbox Task Plan",
+    description: "Plan a server-owned, schema-validated trusted task without executing it.",
+    parameters: object(
+      { template: { type: "string" }, parameters: { type: "object" } },
+      ["template", "parameters"],
+    ),
+    call: ({ template, parameters }) => ["/v1/tasks/plan", { template, parameters }],
+  },
+  {
+    name: "cube_task_submit",
+    label: "CubeSandbox Task Submit",
+    description: "Submit an independently approved trusted task plan.",
+    parameters: object({ plan_ref: { type: "string" } }, ["plan_ref"]),
+    call: ({ plan_ref }) => [`/v1/task-plans/${encodeURIComponent(plan_ref)}/submit`, {}],
+  },
+  {
+    name: "cube_task_status",
+    label: "CubeSandbox Task Status",
+    description: "Read trusted task state without raw process output.",
+    parameters: object({ task_ref: { type: "string" } }, ["task_ref"]),
+    call: ({ task_ref }) => [`/v1/tasks/${encodeURIComponent(task_ref)}/status`, {}],
+  },
+  {
+    name: "cube_task_result",
+    label: "CubeSandbox Task Result",
+    description: "Validate allowlisted outputs, destroy the MicroVM, and return a receipt.",
+    parameters: object({ task_ref: { type: "string" } }, ["task_ref"]),
+    call: ({ task_ref }) => [`/v1/tasks/${encodeURIComponent(task_ref)}/result`, {}],
+  },
+  {
+    name: "cube_task_cancel",
+    label: "CubeSandbox Task Cancel",
+    description: "Cancel and finalize a trusted task.",
+    parameters: object({ task_ref: { type: "string" } }, ["task_ref"]),
+    call: ({ task_ref }) => [`/v1/tasks/${encodeURIComponent(task_ref)}/cancel`, {}],
+  },
+  {
+    name: "cube_task_receipt",
+    label: "CubeSandbox Task Receipt",
+    description: "Return the signed receipt for a finalized trusted task.",
+    parameters: object({ task_ref: { type: "string" } }, ["task_ref"]),
+    call: ({ task_ref }) => [`/v1/tasks/${encodeURIComponent(task_ref)}/receipt`, {}],
+  },
+];
+
 export default defineToolPlugin({
   id: "cube-adapter-tools",
   name: "CubeSandbox Adapter Tools",
@@ -216,8 +280,8 @@ export default defineToolPlugin({
     tokenFile: { type: "string", description: "Read-only file containing the bearer token." },
     profile: { type: "string", description: "Platform-owned policy profile." },
   }),
-  tools: (tool) =>
-    definitions.map((definition) =>
+  tools: (tool) => [
+    ...definitions.map((definition) =>
       tool(
         dynamicTool(definition, (config, toolContext, lease, params, signal) => {
           const [path, body] = definition.call(lease, params);
@@ -225,4 +289,13 @@ export default defineToolPlugin({
         }),
       ),
     ),
+    ...taskDefinitions.map((definition) =>
+      tool(
+        directTool(definition, (config, toolContext, params, signal) => {
+          const [path, body] = definition.call(params);
+          return request(config, toolContext, path, body, signal);
+        }),
+      ),
+    ),
+  ],
 });

@@ -17,8 +17,9 @@ Codex / MCP Host ─→ MCP stdio ─┘                          │
 Adapter 是唯一持有 Cube 连接配置、完整 Sandbox ID 和流量令牌的组件。Runtime
 插件只获得不透明租约；返回给模型的是短 Sandbox 引用，不包含底层凭据。
 
-> **项目状态：** `v0.3.0` 是面向生产形态的参考实现，已经支持持久化加密租约和
-> 多租户策略，但上线前仍需完成部署侧加固，并在每个目标 CubeSandbox 环境重新验收。
+> **项目状态：** `v0.4.0` 是面向生产形态的参考实现，已经支持持久化加密租约、
+> 多租户策略和带审批的可信任务流程，但上线前仍需完成部署侧加固，并在每个目标
+> CubeSandbox 环境重新验收。
 
 ## CubeSandbox 和 Kubernetes 到底是什么关系
 
@@ -36,6 +37,32 @@ CubeSandbox 是沙箱执行系统，Kubernetes 是可选的部署与运维平台
 本项目同样解耦：Adapter 可以直接运行或通过 Compose 连接任何可达的
 CubeAPI/CubeProxy；Helm Chart 只是进一步提供 Kubernetes 生命周期、策略、Secret
 和高可用集成。因此 Kubernetes 是运维选择，不是 SDK 硬依赖。
+
+## 办公网本地 Agent 到生产网的受控可信执行
+
+另一类典型场景是：开发者习惯在办公电脑使用 Codex、Claude Code 等本地 Code
+Agent，但训练数据、GPU、内部 API 和生产数据库只能在隔离的生产网访问。此时可以把
+Adapter 部署在生产侧，通过 HTTPS、mTLS/OIDC 和租户 Profile 向本地 Agent 暴露唯一
+的受控入口；模型生成的代码在 CubeSandbox MicroVM 中执行，而不是在笔记本或生产
+节点直接执行。
+
+```text
+本地 Code Agent -> 生产接入网关 -> Adapter -> 命名任务 + JSON Schema
+                                      -> 独立审批 -> 固定 Profile -> MicroVM
+```
+
+这个模式可以让生产凭据、完整 Sandbox ID、数据卷和工作负载身份留在生产侧。命名任务
+由服务端强制执行封闭 JSON Schema、固定命令参数、Profile、独立审批、输出白名单、
+MicroVM 清理和签名 Execution Receipt；Action Scope 允许 Agent 使用 `task:*`，但拒绝
+原始 exec、Job、文件、Artifact、PTY 和 Checkpoint 接口。这里的“可信执行”是策略
+受控、隔离且可审计的执行面，不等同于带硬件远程证明的机密计算 TEE。
+
+仓库新增了两套可运行参考模板：本地 Agent 发起异步训练任务，以及在只读生产数据上
+执行数据清洗。模板包括固定 Profile 的 MCP 配置、Prompt、无第三方依赖的任务脚本和
+合成测试数据：
+
+- [完整可信执行设计与安全边界](docs/trusted-execution.zh-CN.md)
+- [训练与数据清洗模板](examples/trusted-execution/)
 
 ## 实战证据
 
@@ -124,7 +151,7 @@ DSH 通过 Cordis Plugin 执行 `DSH_APP_CUBESANDBOX_OK`，并在 DSH Web 中完
 
 Hermes Agent 从官方 Dashboard 执行 `HERMES_APP_CUBESANDBOX_OK`。本次截图使用的
 隔离安装直接呈现了 `cube_exec`、`cube_read`、`cube_write` 和 `cube_release` 四个
-核心工具，因此模型使用第二次 `cube_exec` 探测状态。当前 v0.3.0 源码声明了 13 个
+核心工具，因此模型使用第二次 `cube_exec` 探测状态。当前源码声明了 19 个
 插件工具，但这张截图只证明当次执行与释放链路，不把它表述成全部 Hermes 工具验收：
 
 ![Hermes Agent 应用以 Light 模式使用 CubeSandbox](docs/assets/v0.3-acceptance/12-hermes-application.png)
@@ -135,8 +162,27 @@ Codex 通过 Adapter 的 stdio MCP 门面，仅启用 `cube_acquire`、`cube_exe
 
 ![Codex 应用通过 MCP 以 Light 模式使用 CubeSandbox](docs/assets/v0.3-acceptance/13-codex-application.png)
 
+#### 四个真实客户端调用可信任务新功能
+
+2026-09-04 又从四个客户端应用实测了新的策略受控链路。每轮只调用
+`cube_task_plan` → `cube_task_submit` → `cube_task_status` → `cube_task_result` →
+`cube_task_receipt`，最终任务状态为 `succeeded`，MicroVM 清理为 `verified`，Receipt
+算法为 HS256。
+
+![OpenClaw 在自身 Light 模式界面完成可信任务](docs/assets/trusted-execution-apps/01-openclaw-trusted-task.jpg)
+
+![DSH 在自身 Light 模式界面完成可信任务](docs/assets/trusted-execution-apps/02-dsh-trusted-task.jpg)
+
+![Codex 在自身 Light 模式 TUI 中通过 MCP 完成可信任务](docs/assets/trusted-execution-apps/03-codex-trusted-task.png)
+
+![Hermes 在自身 Light 模式 Dashboard 中完成可信任务](docs/assets/trusted-execution-apps/04-hermes-trusted-task.jpg)
+
+Hermes 截图里的“6 tools”由 1 次 `tool_describe` 工具发现和 5 次可信任务调用组成。
+更完整的验收范围和后端证据见[可信执行文档](docs/trusted-execution.zh-CN.md)。
+
 截图没有暴露 Bearer Token、网关地址、完整 Sandbox ID 或私有集群标识；Hermes
-截图中的本地路径和会话标识已做可见遮挡。模型凭据只通过环境变量引用，没有写入仓库。
+截图中的本地路径、完整 Plan/Task/Sandbox 标识和原始签名 Receipt 载荷已做可见遮挡。
+模型凭据只通过环境变量引用，没有写入仓库。
 
 验收时不要只看 Agent 最终回复。建议同时核对以下证据链：
 
@@ -153,8 +199,8 @@ Agent 工具结果中的 sandbox_ref
 
 - 使用 `cubesandbox==0.7.0` 的带认证 Python Adapter；
 - 默认拒绝公网的声明式 Profile，并提供持久卷与检查点能力门控；
-- OpenClaw、DSH、Hermes 共用 13 个执行、文件、异步 Job 和检查点工具，并提供
-  Codex 等 Host 可使用的 MCP 门面；
+- OpenClaw、DSH、Hermes 共用 19 个执行、文件、异步 Job、检查点和可信任务工具，
+  并提供 Codex 等 Host 可使用的 MCP 门面；
 - DSH Cordis Plugin，以及禁用常见宿主 Shell/FS 工具的 Profile Patch；
 - 通过官方 Plugin Doctor 校验的 Hermes Agent 原生 Tool Plugin；
 - Kubernetes、OpenClaw、DSH 和 Hermes Agent 一键安装脚本；
@@ -164,7 +210,9 @@ Agent 工具结果中的 sandbox_ref
 - 分租户 Bearer、OIDC、TLS/mTLS；
 - Prometheus 指标、依赖感知 Readiness 和可插拔审计 Sink；
 - 基于官方 SDK 的 MCP stdio 门面；
-- 追加写入、默认脱敏的 JSONL 审计事件。
+- 追加写入、默认脱敏的 JSONL 审计事件；
+- 服务端强制的训练/数据清洗 TaskTemplate：JSON Schema、Action Scope、独立审批、
+  输出策略、清理确认和签名 Execution Receipt。
 
 最新版本与 Issue 评估见 [CubeSandbox 上游状态](docs/cubesandbox-upstream.md)。
 
@@ -221,7 +269,7 @@ cd cubesandbox-agent-adapter
   --namespace my-agent-runtime \
   --release cube-adapter \
   --secret existing-adapter-secret \
-  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.3.0 \
+  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.4.0 \
   --cube-api-url https://cube-api.example.internal \
   --cube-api-port 443 \
   --cube-proxy-host cube-proxy.example.internal \
@@ -320,7 +368,7 @@ Plugin Doctor。安装后启动一个新的受限会话：
 hermes -t cube-adapter
 ```
 
-插件注册 `cube_exec`、`cube_read`、`cube_write` 与 `cube_release`。启用 Hermes
+插件注册全部 19 个通用执行和可信任务工具。启用 Hermes
 工具压缩时，这些工具可能不会直接塞进模型 Prompt，而是先出现在内置的
 `tool_describe` / `tool_call` 延迟目录中；这是正常行为，本仓库的真实联调已经覆盖
 了这条路径。
@@ -359,8 +407,9 @@ docker compose up -d --build
 ## API
 
 API 包含健康/就绪/指标、租户租约、类型化文件与二进制 Artifact、同步执行、
-支持 SSE 和取消的持久异步 Job、交互式 PTY、持久工作区，以及受 Profile 门控的
-Checkpoint/Rollback/Fork。完整契约见 [OpenAPI 文档](docs/openapi.yaml)。
+支持 SSE 和取消的持久异步 Job、交互式 PTY、持久工作区、受 Profile 门控的
+Checkpoint/Rollback/Fork，以及 `plan -> approve -> submit -> result/receipt` 可信任务。
+完整契约见 [OpenAPI 文档](docs/openapi.yaml)。
 
 每个 `POST` 都要求 `Authorization: Bearer …`。`acquire` 对
 `(runtime, HMAC-SHA-256(session_key))` 幂等。HMAC Key 与 Bearer Token
@@ -396,6 +445,10 @@ mTLS Adapter 时可省略 Token 变量，并设置 `CUBE_ADAPTER_CLIENT_CERT_FIL
 `CUBE_ADAPTER_CLIENT_KEY_FILE`；`CUBE_ADAPTER_CA_FILE` 仍用于校验服务端证书。
 `CUBE_ADAPTER_PROFILE` 由宿主持有，不暴露成模型可选的工具参数。
 
+MCP 还提供 `cube_task_plan`、`cube_task_submit`、`cube_task_status`、
+`cube_task_result`、`cube_task_cancel` 和 `cube_task_receipt`。审批故意不作为 Agent MCP
+工具暴露，必须由独立 `approver` 身份调用认证 HTTP 接口。
+
 ## 审计
 
 审计行包含 Runtime、带密钥的会话摘要、策略、动作、Request ID、短 Sandbox
@@ -418,6 +471,7 @@ JSONL 事件发送到持久、访问受控的审计流水线。
 | `CUBE_ADAPTER_TOKENS_FILE` | 三选一 | 分租户 Bearer Principal JSON |
 | `CUBE_ADAPTER_OIDC_JWKS_URL` | 三选一 | OIDC JWKS 地址 |
 | `CUBE_ADAPTER_HMAC_KEY` | 是 | 独立的会话假名化 Key |
+| `CUBE_ADAPTER_RECEIPT_HMAC_KEY` | 否 | 独立 Receipt 签名 Key；默认复用会话 HMAC Key |
 | `CUBE_TEMPLATE_ID` | 是 | 平台维护的 READY 模板 alias |
 | `CUBE_API_URL` | 是 | Adapter 可访问的 CubeAPI 地址 |
 | `CUBE_API_KEY` | 按需 | CubeAPI 凭据，不会暴露给 Runtime 插件 |
@@ -426,6 +480,7 @@ JSONL 事件发送到持久、访问受控的审计流水线。
 | `CUBE_ADAPTER_AUDIT_LOG` | 否 | JSONL 路径；默认使用本地文件 |
 | `CUBE_ADAPTER_AUDIT_UI` | 否 | 仅在受保护测试网络设为 `1` |
 | `CUBE_ADAPTER_PROFILES_FILE` | 否 | 运维方维护的声明式 YAML Profile |
+| `CUBE_ADAPTER_TASK_TEMPLATES_FILE` | 否 | 服务端任务 Schema、命令、审批与输出策略 |
 | `CUBE_ADAPTER_STATE_BACKEND_URL` | HA/恢复 | `redis://` 或 `rediss://` |
 | `CUBE_ADAPTER_STATE_ENCRYPTION_KEY` | 使用 Redis 时 | 持久记录 Fernet 加密 Key |
 | `CUBE_ADAPTER_AUDIT_SINKS` | 否 | `file`、`stdout`、`http` 逗号列表 |
@@ -433,6 +488,10 @@ JSONL 事件发送到持久、访问受控的审计流水线。
 | `CUBE_ADAPTER_TLS_CLIENT_CA_FILE` | 否 | 开启并校验 mTLS 客户端 |
 | `CUBE_ADAPTER_SANDBOX_TIMEOUT` | 否 | Sandbox 超时，默认 300 秒 |
 | `CUBE_ADAPTER_MAX_COMMAND_SECONDS` | 否 | 命令时长上限，默认 120 秒 |
+
+Token Principal 的 `allowed_actions` / OIDC 的 `cube_actions` 支持精确 Action 和
+`task:*` 一类族通配符；`allowed_task_templates` / `cube_task_templates` 限制命名任务。
+省略字段时保留兼容的全允许行为；显式空列表会拒绝所有 Action 或任务。
 
 Helm 仅使用 OIDC 或 mTLS 时设置 `auth.sharedTokenEnabled=false`。OIDC 必须同时
 配置 issuer 和 audience；以 mTLS 证书主题作为身份时必须配置并验证客户端 CA。
@@ -495,7 +554,8 @@ hermes plugins disable cube-adapter-tools
 
 - 零依赖默认值仍是内存状态并限制单副本；`replicaCount > 1` 时必须启用 Redis，
   租约记录会加密，操作使用可续期分布式锁；
-- PTY、SSE 流式输出、异步取消和租户配额已经实现；人工审批回调和通用限流器尚未实现；
+- PTY、SSE 流式输出、异步取消、租户配额和单个独立审批者流程已经实现；多人会签、
+  外部审批回调和通用限流器尚未实现；
 - CubeSandbox v0.7 暂不支持带 Volume/Host Mount 的快照，Profile 默认拒绝该组合；
 - Profile 的 `network` 配置只归运维方所有，模型不能动态传入；
 - DSH 当前暴露 `cube_*` 工具，还不是透明的原生 `shell/fs/pty` Provider；

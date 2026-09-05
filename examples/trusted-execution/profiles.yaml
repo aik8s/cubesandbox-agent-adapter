@@ -1,0 +1,30 @@
+defaults:
+  allow_internet_access: false
+  network:
+    allow_public_traffic: false
+  allowed_runtimes: [mcp]
+  max_active_leases_per_tenant: 2
+  max_jobs_per_lease: 1
+  checkpoints_enabled: false
+  workspace:
+    mode: per-session-volume
+    mount_path: /workspace
+    retain_on_kill: false
+
+profiles:
+  trusted-training:
+    template: trusted-training
+    sandbox_timeout_seconds: 28800
+    max_command_seconds: 21600
+    lease_idle_ttl_seconds: 28800
+    lifecycle:
+      on_timeout: kill
+      auto_resume: false
+  trusted-data-cleaning:
+    template: trusted-data-cleaning
+    sandbox_timeout_seconds: 14400
+    max_command_seconds: 7200
+    lease_idle_ttl_seconds: 14400
+    lifecycle:
+      on_timeout: kill
+      auto_resume: false

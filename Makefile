@@ -7,9 +7,10 @@ test: lint test-python test-node test-install helm-lint
 test-python:
 	$(PYTHON) -m unittest discover -s adapter -p 'test_*.py' -v
 	$(PYTHON) -m unittest -v plugins/hermes/test_plugin.py
+	$(PYTHON) tests/test_trusted_execution.py
 
 lint:
-	ruff check adapter plugins/hermes
+	ruff check adapter plugins/hermes examples/trusted-execution/tasks scripts/verify_receipt.py tests/test_trusted_execution.py
 	node --check plugins/openclaw/index.js
 	node --check plugins/dsh/index.js
 	bash -n scripts/install.sh scripts/dev-up.sh

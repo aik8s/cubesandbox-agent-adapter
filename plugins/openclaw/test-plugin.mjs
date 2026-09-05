@@ -47,6 +47,12 @@ try {
       "cube_rollback",
       "cube_fork",
       "cube_release",
+      "cube_task_plan",
+      "cube_task_submit",
+      "cube_task_status",
+      "cube_task_result",
+      "cube_task_cancel",
+      "cube_task_receipt",
     ],
   );
   const exec = registrations[0].definition({ sessionKey: "openclaw-session-42" });
@@ -60,6 +66,14 @@ try {
   assert.equal(calls[0].body.session_key, "openclaw-session-42");
   assert.equal(calls[1].body.command, "printf remote-ok");
   assert.equal(calls[0].authorization, "Bearer redacted-test-token");
+  const taskPlan = registrations[13].definition({ sessionKey: "openclaw-session-42" });
+  await taskPlan.execute(
+    "call-2",
+    { template: "train-logistic", parameters: { epochs: 10 } },
+    new AbortController().signal,
+  );
+  assert.ok(calls[2].url.endsWith("/v1/tasks/plan"));
+  assert.equal(calls[2].body.template, "train-logistic");
   console.log("OpenClaw Cube Adapter plugin test: OK");
 } finally {
   globalThis.fetch = originalFetch;

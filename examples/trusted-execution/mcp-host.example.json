@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "cube-trusted-training": {
+      "command": "/absolute/path/to/.venv/bin/python",
+      "args": ["-m", "adapter.mcp_server"],
+      "env": {
+        "PYTHONPATH": "/absolute/path/to/cubesandbox-agent-adapter",
+        "CUBE_ADAPTER_URL": "https://adapter.example.internal",
+        "CUBE_ADAPTER_PROFILE": "trusted-training",
+        "CUBE_ADAPTER_TOKEN_FILE": "/absolute/path/to/secrets/training.token",
+        "CUBE_ADAPTER_CA_FILE": "/absolute/path/to/secrets/production-ca.crt"
+      }
+    },
+    "cube-trusted-data-cleaning": {
+      "command": "/absolute/path/to/.venv/bin/python",
+      "args": ["-m", "adapter.mcp_server"],
+      "env": {
+        "PYTHONPATH": "/absolute/path/to/cubesandbox-agent-adapter",
+        "CUBE_ADAPTER_URL": "https://adapter.example.internal",
+        "CUBE_ADAPTER_PROFILE": "trusted-data-cleaning",
+        "CUBE_ADAPTER_TOKEN_FILE": "/absolute/path/to/secrets/data-cleaning.token",
+        "CUBE_ADAPTER_CA_FILE": "/absolute/path/to/secrets/production-ca.crt"
+      }
+    }
+  }
+}

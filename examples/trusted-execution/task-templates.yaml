@@ -1,0 +1,114 @@
+defaults:
+  approval_required: true
+  plan_ttl_seconds: 900
+
+tasks:
+  train-logistic:
+    description: Train the pinned logistic-regression workload over one approved CSV.
+    profile: trusted-training
+    parameters:
+      type: object
+      additionalProperties: false
+      required: [input, label, features, epochs, learning_rate]
+      properties:
+        input:
+          type: string
+          pattern: ^/workspace/input/[A-Za-z0-9_.-]+\.csv$
+        label:
+          type: string
+          pattern: ^[A-Za-z_][A-Za-z0-9_]{0,63}$
+        features:
+          type: string
+          pattern: ^[A-Za-z_][A-Za-z0-9_]*(,[A-Za-z_][A-Za-z0-9_]*)*$
+        epochs: {type: integer, minimum: 1, maximum: 100000}
+        learning_rate: {type: number, exclusiveMinimum: 0, maximum: 10}
+    command:
+      argv:
+        - python3
+        - /opt/cube-tasks/train_logistic.py
+        - --input
+        - ${input}
+        - --output-dir
+        - /workspace/results/training
+        - --label
+        - ${label}
+        - --features
+        - ${features}
+        - --epochs
+        - ${epochs}
+        - --learning-rate
+        - ${learning_rate}
+      cwd: /workspace
+    outputs:
+      - name: metrics
+        path: /workspace/results/training/metrics.json
+        format: json
+        expose: content
+        max_bytes: 16384
+        schema:
+          type: object
+          additionalProperties: false
+          required: [epochs, feature_count, final_training_loss, learning_rate, row_count, training_accuracy]
+          properties:
+            epochs: {type: integer, minimum: 1}
+            feature_count: {type: integer, minimum: 1}
+            final_training_loss: {type: number, minimum: 0}
+            learning_rate: {type: number, exclusiveMinimum: 0}
+            row_count: {type: integer, minimum: 2}
+            training_accuracy: {type: number, minimum: 0, maximum: 1}
+      - name: model
+        path: /workspace/results/training/model.json
+        format: json
+        expose: digest
+        max_bytes: 1048576
+      - name: manifest
+        path: /workspace/results/training/execution-manifest.json
+        format: json
+        expose: content
+        max_bytes: 16384
+
+  clean-csv:
+    description: Validate, minimize, hash selected fields, and deduplicate one approved CSV.
+    profile: trusted-data-cleaning
+    parameters:
+      type: object
+      additionalProperties: false
+      required: [input, required_columns, drop_columns, hash_columns, max_rows]
+      properties:
+        input:
+          type: string
+          pattern: ^/workspace/input/[A-Za-z0-9_.-]+\.csv$
+        required_columns: {type: string, maxLength: 1024}
+        drop_columns: {type: string, maxLength: 1024}
+        hash_columns: {type: string, maxLength: 1024}
+        max_rows: {type: integer, minimum: 1, maximum: 1000000}
+    command:
+      argv:
+        - python3
+        - /opt/cube-tasks/clean_csv.py
+        - --input
+        - ${input}
+        - --output
+        - /workspace/results/cleaning/clean.csv
+        - --report
+        - /workspace/results/cleaning/report.json
+        - --required-columns
+        - ${required_columns}
+        - --drop-columns
+        - ${drop_columns}
+        - --hash-columns
+        - ${hash_columns}
+        - --max-rows
+        - ${max_rows}
+      cwd: /workspace
+    outputs:
+      - name: report
+        path: /workspace/results/cleaning/report.json
+        format: json
+        expose: content
+        max_bytes: 32768
+      - name: clean-data
+        path: /workspace/results/cleaning/clean.csv
+        format: text
+        expose: digest
+        max_bytes: 8388608

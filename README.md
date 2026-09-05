@@ -18,10 +18,10 @@ The Adapter is the only component that holds Cube connection settings, full
 Sandbox IDs and traffic tokens. Runtime plugins receive opaque leases and
 return only short Sandbox references to the model.
 
-> **Project status:** v0.3.0 is a production-oriented reference implementation.
-> It supports durable encrypted leases and multi-tenant policy, but still
-> requires deployment-specific hardening and acceptance tests in every target
-> CubeSandbox environment.
+> **Project status:** v0.4.0 is a production-oriented reference implementation.
+> It supports durable encrypted leases, multi-tenant policy, and approved
+> trusted-task workflows, but still requires deployment-specific hardening and
+> acceptance tests in every target CubeSandbox environment.
 
 ## CubeSandbox and Kubernetes
 
@@ -43,6 +43,36 @@ This repository follows the same separation: the Adapter can run directly or
 with Compose against any reachable CubeAPI/CubeProxy. Its Helm chart adds
 Kubernetes lifecycle, policy, Secret and HA integration. Kubernetes is an
 operations choice, not an SDK dependency.
+
+## Controlled execution from local agents into production
+
+A common enterprise pattern keeps the developer's preferred code agent on an
+office-network workstation while datasets, GPUs, internal APIs, and production
+databases remain isolated in the production network. Deploying the Adapter on
+the production side provides one authenticated, policy-controlled entry point;
+generated code runs in a CubeSandbox MicroVM instead of on the laptop or a
+production node.
+
+```text
+local code agent -> production gateway -> Adapter -> named task + schema
+                                      -> independent approval -> fixed profile
+                                                              -> MicroVM
+```
+
+Production credentials, full Sandbox IDs, mounted data, and workload identity
+stay on the production side. Named tasks enforce a closed JSON Schema, fixed
+command arguments, profile, approval gate, output allowlist, cleanup, and a
+signed Execution Receipt. Action scopes let the Agent use `task:*` without
+access to raw `exec`, job, file, artifact, PTY, or checkpoint endpoints.
+“Trusted execution” here is a controlled, isolated, and auditable execution
+plane, not a hardware-attested confidential-computing TEE.
+
+Runnable examples cover a local agent starting an asynchronous training job and
+cleaning read-only production data. They include fixed-profile MCP entries,
+prompts, dependency-free task scripts, and synthetic fixtures:
+
+- [Trusted-execution design and security boundaries](docs/trusted-execution.md)
+- [Training and data-cleaning templates](examples/trusted-execution/)
 
 ## Hands-on evidence
 
@@ -128,8 +158,8 @@ same status and cleanup path from DSH Web:
 Hermes Agent executed `HERMES_APP_CUBESANDBOX_OK` from its official dashboard.
 The isolated installation used for this screenshot surfaced the four core tools
 `cube_exec`, `cube_read`, `cube_write` and `cube_release`, so the model used a
-second `cube_exec` as its status probe. The current v0.3.0 source declares the
-13-tool plugin surface, but this image proves only the captured execution and
+second `cube_exec` as its status probe. The current source declares the
+19-tool plugin surface, but this image proves only the captured execution and
 release path rather than every Hermes tool:
 
 ![Hermes Agent application using CubeSandbox in light mode](docs/assets/v0.3-acceptance/12-hermes-application.png)
@@ -140,10 +170,30 @@ Codex used the Adapter's stdio MCP facade with only `cube_acquire`, `cube_exec`,
 
 ![Codex application using CubeSandbox through MCP in light mode](docs/assets/v0.3-acceptance/13-codex-application.png)
 
+#### Trusted-task feature through four real clients
+
+The newer policy-controlled flow was also exercised on 2026-09-04 from all four
+client applications. Each run used only `cube_task_plan` → `cube_task_submit` →
+`cube_task_status` → `cube_task_result` → `cube_task_receipt` and finished with
+a `succeeded` task, verified MicroVM cleanup, and an HS256 receipt.
+
+![OpenClaw trusted-task run in its native light UI](docs/assets/trusted-execution-apps/01-openclaw-trusted-task.jpg)
+
+![DSH trusted-task run in its native light UI](docs/assets/trusted-execution-apps/02-dsh-trusted-task.jpg)
+
+![Codex trusted-task run through MCP in its native light TUI](docs/assets/trusted-execution-apps/03-codex-trusted-task.png)
+
+![Hermes trusted-task run in its native light Dashboard](docs/assets/trusted-execution-apps/04-hermes-trusted-task.jpg)
+
+In the Hermes capture, “6 tools” means one `tool_describe` discovery call plus
+the five trusted-task calls. Detailed acceptance scope and backend evidence are
+in the [trusted-execution guide](docs/trusted-execution.md).
+
 The screenshots expose no bearer token, gateway address, full Sandbox ID or
-private cluster identifier. The Hermes local path and session identifier are
-visibly redacted. Model-provider credentials remained environment references
-and were not written into the repository.
+private cluster identifier. Complete Plan/Task/Sandbox identifiers and the raw
+Hermes signed-receipt payload are also visibly redacted. Model-provider
+credentials remained environment references and were not written into the
+repository.
 
 For the full environment, commands, limitations and evidence, read the
 following Chinese articles on [aik8s.run](https://aik8s.run/):
@@ -157,8 +207,8 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
 
 - authenticated Python Adapter using `cubesandbox==0.7.0`;
 - fail-closed declarative profiles with persistent-volume and checkpoint gates;
-- OpenClaw, DSH and Hermes plugins with 13 compatible execution, file, async
-  job and checkpoint tools, plus an MCP facade for hosts such as Codex;
+- OpenClaw, DSH and Hermes plugins with 19 compatible execution, file, async
+  job, checkpoint, and trusted-task tools, plus an MCP facade for Codex;
 - DSH Cordis Plugin and a patch that disables common host Shell/FS tools;
 - Hermes Agent native Tool Plugin with official Plugin Doctor validation;
 - one-command installers for Kubernetes, OpenClaw, DSH and Hermes Agent;
@@ -168,7 +218,10 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
 - per-tenant bearer, OIDC and TLS/mTLS authentication;
 - Prometheus metrics, dependency-aware readiness and pluggable audit sinks;
 - an official-SDK MCP stdio facade;
-- append-only, redacted JSONL audit events.
+- append-only, redacted JSONL audit events;
+- server-enforced training/data-cleaning TaskTemplates with JSON Schema,
+  action scopes, independent approval, output policy, cleanup, and signed
+  Execution Receipts.
 
 The current release and issue assessment is tracked in
 [CubeSandbox upstream status](docs/cubesandbox-upstream.md).
@@ -225,7 +278,7 @@ Override the image, namespace or Secret when needed:
   --namespace my-agent-runtime \
   --release cube-adapter \
   --secret existing-adapter-secret \
-  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.3.0 \
+  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.4.0 \
   --cube-api-url https://cube-api.example.internal \
   --cube-api-port 443 \
   --cube-proxy-host cube-proxy.example.internal \
@@ -327,7 +380,7 @@ Doctor in CI mode. Start a new restricted session afterward:
 hermes -t cube-adapter
 ```
 
-The plugin registers `cube_exec`, `cube_read`, `cube_write` and `cube_release`.
+The plugin registers all 19 general execution and trusted-task tools.
 With Hermes tool compression enabled, these tools may initially appear through
 the built-in `tool_describe` / `tool_call` catalog instead of being copied into
 the model prompt directly; this is expected and was covered by the real test.
@@ -369,9 +422,9 @@ docker compose up -d --build
 
 The API includes health/readiness/metrics, tenant-scoped leases, typed file and
 binary artifact operations, synchronous execution, durable jobs with SSE and
-cancellation, interactive PTYs, persistent workspaces, and gated
-checkpoint/rollback/fork operations. See the complete
-[OpenAPI contract](docs/openapi.yaml).
+cancellation, interactive PTYs, persistent workspaces, gated checkpoints, and
+approved trusted tasks (`plan -> approve -> submit -> result/receipt`). See the
+complete [OpenAPI contract](docs/openapi.yaml).
 
 Every `POST` requires `Authorization: Bearer …`. `acquire` is idempotent per
 `(runtime, HMAC-SHA-256(session_key))`. The HMAC key is deliberately independent
@@ -412,6 +465,11 @@ variables and set `CUBE_ADAPTER_CLIENT_CERT_FILE` plus
 server certificate. The host-owned `CUBE_ADAPTER_PROFILE` is deliberately not
 exposed as a model-selected tool argument.
 
+The facade also exposes `cube_task_plan`, `cube_task_submit`,
+`cube_task_status`, `cube_task_result`, `cube_task_cancel`, and
+`cube_task_receipt`. Approval is intentionally not an Agent MCP tool; a
+separate `approver` identity uses the authenticated HTTP endpoint.
+
 ## Audit
 
 Audit rows contain runtime, keyed session digest, policy, action, request ID,
@@ -434,6 +492,7 @@ JSONL events to a durable, access-controlled pipeline in real deployments.
 | `CUBE_ADAPTER_TOKENS_FILE` | one auth method | per-tenant bearer principals JSON |
 | `CUBE_ADAPTER_OIDC_JWKS_URL` | one auth method | OIDC JWKS endpoint |
 | `CUBE_ADAPTER_HMAC_KEY` | yes | independent session pseudonymization key |
+| `CUBE_ADAPTER_RECEIPT_HMAC_KEY` | no | dedicated receipt key; falls back to the session HMAC key |
 | `CUBE_TEMPLATE_ID` | yes | platform-owned READY template alias |
 | `CUBE_API_URL` | yes | CubeAPI address visible to the Adapter |
 | `CUBE_API_KEY` | when enabled | CubeAPI credential, never exposed to plugins |
@@ -442,6 +501,7 @@ JSONL events to a durable, access-controlled pipeline in real deployments.
 | `CUBE_ADAPTER_AUDIT_LOG` | no | JSONL path; defaults to local file |
 | `CUBE_ADAPTER_AUDIT_UI` | no | set `1` only on a protected test network |
 | `CUBE_ADAPTER_PROFILES_FILE` | no | declarative operator-owned YAML profiles |
+| `CUBE_ADAPTER_TASK_TEMPLATES_FILE` | no | server-owned task schemas, commands, approvals, and output policies |
 | `CUBE_ADAPTER_STATE_BACKEND_URL` | HA/recovery | `redis://` or `rediss://` URL |
 | `CUBE_ADAPTER_STATE_ENCRYPTION_KEY` | with Redis | Fernet key for persisted records |
 | `CUBE_ADAPTER_AUDIT_SINKS` | no | comma list of `file`, `stdout`, `http` |
@@ -449,6 +509,11 @@ JSONL events to a durable, access-controlled pipeline in real deployments.
 | `CUBE_ADAPTER_TLS_CLIENT_CA_FILE` | no | require and validate mTLS clients |
 | `CUBE_ADAPTER_SANDBOX_TIMEOUT` | no | Sandbox timeout; default 300 seconds |
 | `CUBE_ADAPTER_MAX_COMMAND_SECONDS` | no | command cap; default 120 seconds |
+
+In token principals or OIDC claims, `allowed_actions` / `cube_actions` accepts
+exact actions or family wildcards such as `task:*`. `allowed_task_templates` /
+`cube_task_templates` restricts named tasks. Omission preserves the compatible
+allow-all behavior; an explicit empty list denies every action or task.
 
 For an OIDC-only or mTLS-only Helm deployment, set
 `auth.sharedTokenEnabled=false`. OIDC requires both issuer and audience; mTLS
@@ -513,8 +578,9 @@ hermes plugins disable cube-adapter-tools
 - Memory state remains the zero-dependency default and is intentionally
   single-replica. Redis state is required when `replicaCount > 1`; records are
   encrypted and operations use renewable distributed locks.
-- PTY, SSE output, async cancellation and tenant quotas are implemented.
-  Human approval callbacks and a general-purpose rate limiter are not.
+- PTY, SSE output, async cancellation, tenant quotas, and one independent task
+  approver are implemented. Quorum approval, external approval callbacks, and
+  a general-purpose rate limiter are not.
 - CubeSandbox v0.7 does not support snapshots with volume/host mounts; profiles
   reject that combination unless an operator explicitly enables the gate.
 - Profile `network` fields are operator-owned configuration, never model input.

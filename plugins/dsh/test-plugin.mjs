@@ -47,6 +47,12 @@ try {
     "cube_rollback",
     "cube_fork",
     "cube_release",
+    "cube_task_plan",
+    "cube_task_submit",
+    "cube_task_status",
+    "cube_task_result",
+    "cube_task_cancel",
+    "cube_task_receipt",
   ]);
   assert.equal(prompts.length, 1);
   const result = await tools[0].execute(
@@ -58,6 +64,12 @@ try {
   assert.equal(calls[0].body.runtime, "dsh");
   assert.equal(calls[1].body.command, "printf remote-ok");
   assert.equal(calls[0].authorization, "Bearer redacted-test-token");
+  await tools[13].execute(
+    { template: "clean-csv", parameters: { max_rows: 100 } },
+    { agent: { id: "session-42" }, rootCallId: "call-2", signal: new AbortController().signal },
+  );
+  assert.ok(calls[2].url.endsWith("/v1/tasks/plan"));
+  assert.equal(calls[2].body.template, "clean-csv");
   dispose();
   console.log("DSH Cube Adapter plugin test: OK");
 } finally {

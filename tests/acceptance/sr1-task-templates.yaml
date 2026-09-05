@@ -1,0 +1,161 @@
+defaults:
+  approval_required: true
+  plan_ttl_seconds: 900
+
+tasks:
+  trusted-smoke:
+    description: Produce content and digest-only outputs in a real CubeSandbox MicroVM.
+    profile: trusted-acceptance
+    parameters:
+      type: object
+      additionalProperties: false
+      required: [run_id, epochs]
+      properties:
+        run_id:
+          type: string
+          pattern: ^acceptance-[a-z0-9-]{1,40}$
+        epochs: {type: integer, minimum: 1, maximum: 500}
+    command:
+      argv:
+        - python3
+        - -c
+        - |
+          import hashlib, json, pathlib, sys, time
+          run_id, epochs = sys.argv[1], int(sys.argv[2])
+          target = pathlib.Path('/workspace/results/trusted-smoke')
+          target.mkdir(parents=True, exist_ok=True)
+          time.sleep(4)
+          model = json.dumps({'kind': 'acceptance-model', 'weights': [0.25, -0.5]}, sort_keys=True)
+          (target / 'model.json').write_text(model, encoding='utf-8')
+          metrics = {'epochs': epochs, 'run_id': run_id, 'score': 0.98, 'status': 'ok'}
+          (target / 'metrics.json').write_text(json.dumps(metrics, sort_keys=True), encoding='utf-8')
+          manifest = {'executor': 'cubesandbox-microvm', 'model_sha256': hashlib.sha256(model.encode()).hexdigest(), 'run_id': run_id}
+          (target / 'manifest.json').write_text(json.dumps(manifest, sort_keys=True), encoding='utf-8')
+        - ${run_id}
+        - ${epochs}
+      cwd: /workspace
+    outputs:
+      - name: metrics
+        path: /workspace/results/trusted-smoke/metrics.json
+        format: json
+        expose: content
+        max_bytes: 16384
+        schema:
+          type: object
+          additionalProperties: false
+          required: [epochs, run_id, score, status]
+          properties:
+            epochs: {type: integer, minimum: 1, maximum: 500}
+            run_id: {type: string}
+            score: {type: number, minimum: 0, maximum: 1}
+            status: {const: ok}
+      - name: model
+        path: /workspace/results/trusted-smoke/model.json
+        format: json
+        expose: digest
+        max_bytes: 1048576
+      - name: manifest
+        path: /workspace/results/trusted-smoke/manifest.json
+        format: json
+        expose: content
+        max_bytes: 16384
+
+  trusted-cancel:
+    description: Start a bounded long-running task so cancellation and cleanup can be verified.
+    profile: trusted-acceptance
+    parameters:
+      type: object
+      additionalProperties: false
+      required: [wait_seconds]
+      properties:
+        wait_seconds: {type: integer, minimum: 10, maximum: 120}
+    command:
+      argv:
+        - python3
+        - -c
+        - "import sys, time; time.sleep(int(sys.argv[1]))"
+        - ${wait_seconds}
+      cwd: /workspace
+    outputs: []
+
+  invalid-output:
+    description: Deliberately violate an approved output schema to prove fail-closed validation.
+    profile: trusted-acceptance
+    parameters:
+      type: object
+      additionalProperties: false
+      required: [run_id]
+      properties:
+        run_id:
+          type: string
+          pattern: ^acceptance-[a-z0-9-]{1,40}$
+    command:
+      argv:
+        - python3
+        - -c
+        - |
+          import json, pathlib, sys
+          target = pathlib.Path('/workspace/results/invalid-output')
+          target.mkdir(parents=True, exist_ok=True)
+          (target / 'metrics.json').write_text(json.dumps({'run_id': sys.argv[1], 'score': 2.0}), encoding='utf-8')
+        - ${run_id}
+      cwd: /workspace
+    outputs:
+      - name: metrics
+        path: /workspace/results/invalid-output/metrics.json
+        format: json
+        expose: content
+        schema:
+          type: object
+          additionalProperties: false
+          required: [run_id, score]
+          properties:
+            run_id: {type: string}
+            score: {type: number, minimum: 0, maximum: 1}
+
+  expiring-plan:
+    description: Expire before submission to prove plans cannot be replayed indefinitely.
+    profile: trusted-acceptance
+    plan_ttl_seconds: 1
+    parameters:
+      type: object
+      additionalProperties: false
+      properties: {}
+    command:
+      argv: [python3, -c, "print('expired plans must never execute')"]
+      cwd: /workspace
+    outputs: []
+
+  trusted-auto:
+    description: Exercise an explicitly operator-approved task that does not require approval.
+    profile: trusted-acceptance
+    approval_required: false
+    parameters:
+      type: object
+      additionalProperties: false
+      required: [message]
+      properties:
+        message: {type: string, pattern: "^safe-[a-z0-9-]{1,30}$"}
+    command:
+      argv:
+        - python3
+        - -c
+        - |
+          import json, pathlib, sys
+          target = pathlib.Path('/workspace/results/trusted-auto.json')
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text(json.dumps({'message': sys.argv[1], 'status': 'ok'}), encoding='utf-8')
+        - ${message}
+      cwd: /workspace
+    outputs:
+      - name: result
+        path: /workspace/results/trusted-auto.json
+        format: json
+        expose: content
+        schema:
+          type: object
+          additionalProperties: false
+          required: [message, status]
+          properties:
+            message: {type: string}
+            status: {const: ok}

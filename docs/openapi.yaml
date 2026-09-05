@@ -1,9 +1,11 @@
 openapi: 3.1.0
 info:
   title: CubeSandbox Agent Adapter API
-  version: 0.3.0
+  version: 0.4.0
   description: >-
     Authenticated, tenant-aware execution broker for CubeSandbox microVMs.
+    Supports action-scoped identities and approved, schema-validated trusted
+    tasks with allowlisted outputs and signed execution receipts.
     Full Sandbox IDs, Cube traffic tokens, commands, output, and bearer tokens
     are intentionally excluded from audit records.
 servers:
@@ -278,6 +280,84 @@ paths:
       requestBody: { $ref: "#/components/requestBodies/CheckpointAction" }
       responses:
         "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/task-templates:
+    get:
+      operationId: listTaskTemplates
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "403": { $ref: "#/components/responses/Denied" }
+  /v1/tasks/plan:
+    post:
+      operationId: planTrustedTask
+      requestBody: { $ref: "#/components/requestBodies/TaskPlan" }
+      responses:
+        "201": { $ref: "#/components/responses/JsonSuccess" }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { $ref: "#/components/responses/Denied" }
+  /v1/task-plans/{plan_ref}/approve:
+    post:
+      operationId: approveTrustedTaskPlan
+      parameters: [{ $ref: "#/components/parameters/PlanRef" }]
+      requestBody: { $ref: "#/components/requestBodies/TaskApprove" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "403": { $ref: "#/components/responses/Denied" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/task-plans/{plan_ref}:
+    get:
+      operationId: getTrustedTaskPlan
+      parameters: [{ $ref: "#/components/parameters/PlanRef" }]
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "403": { $ref: "#/components/responses/Denied" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/task-plans/{plan_ref}/submit:
+    post:
+      operationId: submitTrustedTaskPlan
+      parameters: [{ $ref: "#/components/parameters/PlanRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "202": { $ref: "#/components/responses/JsonSuccess" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/tasks/{task_ref}/status:
+    parameters: [{ $ref: "#/components/parameters/TaskRef" }]
+    get:
+      operationId: getTrustedTaskStatus
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+    post:
+      operationId: refreshTrustedTaskStatus
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/tasks/{task_ref}/result:
+    post:
+      operationId: finalizeTrustedTask
+      parameters: [{ $ref: "#/components/parameters/TaskRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "409": { $ref: "#/components/responses/Error" }
+  /v1/tasks/{task_ref}/cancel:
+    post:
+      operationId: cancelTrustedTask
+      parameters: [{ $ref: "#/components/parameters/TaskRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/tasks/{task_ref}/receipt:
+    parameters: [{ $ref: "#/components/parameters/TaskRef" }]
+    get:
+      operationId: getExecutionReceipt
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "409": { $ref: "#/components/responses/Error" }
+    post:
+      operationId: readExecutionReceipt
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+        "409": { $ref: "#/components/responses/Error" }
   /v1/admin/gc:
     post:
       operationId: runGarbageCollection
@@ -312,6 +392,16 @@ components:
       in: path
       required: true
       schema: { type: string, pattern: "^checkpoint_[a-f0-9]{20}$" }
+    PlanRef:
+      name: plan_ref
+      in: path
+      required: true
+      schema: { type: string, pattern: "^plan_[a-f0-9]{20}$" }
+    TaskRef:
+      name: task_ref
+      in: path
+      required: true
+      schema: { type: string, pattern: "^task_[a-f0-9]{20}$" }
     StreamTimeout:
       name: timeout
       in: query
@@ -392,6 +482,16 @@ components:
       content:
         application/json:
           schema: { $ref: "#/components/schemas/CheckpointActionRequest" }
+    TaskPlan:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/TaskPlanRequest" }
+    TaskApprove:
+      required: true
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/TaskApproveRequest" }
     Empty:
       required: true
       content:
@@ -552,6 +652,21 @@ components:
       additionalProperties: false
       properties:
         branch: { type: string, minLength: 1, maxLength: 128 }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    TaskPlanRequest:
+      type: object
+      additionalProperties: false
+      required: [template, parameters]
+      properties:
+        template: { type: string, pattern: "^[a-z][a-z0-9-]{0,62}$" }
+        parameters: { type: object }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    TaskApproveRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        decision: { type: string, enum: [approve, deny], default: approve }
+        reason: { type: string, maxLength: 1024 }
         request_id: { $ref: "#/components/schemas/RequestId" }
     Error:
       type: object
