@@ -27,6 +27,8 @@ python3 -m http.server 19120 --bind 127.0.0.1 --directory dist/site
 Open <http://127.0.0.1:19120/>. Test language switching, all four client screenshot
 tabs and five trust/audit tabs (including arrow keys), copy feedback, documentation links, and mobile
 layout. The build reads `VERSION`; do not hardcode a new release in the page.
+CSS and JavaScript URLs include content hashes so a new page does not reuse
+scripts from an earlier deployment in the browser cache.
 
 `.github/workflows/pages.yml` builds on relevant pull requests and deploys on
 matching pushes to `main` (or manual dispatch). In repository Settings → Pages,

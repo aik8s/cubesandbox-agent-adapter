@@ -1,14 +1,22 @@
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const output = path.join(root, 'dist/site');
 const version = (await readFile(path.join(root, 'VERSION'), 'utf8')).trim();
 if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) throw new Error('Invalid VERSION');
 await mkdir(path.join(output, 'assets'), { recursive: true });
+const cacheVersions = new Map();
+for (const file of ['styles.css', 'trust.css', 'app.js']) {
+  cacheVersions.set(file, createHash('sha256').update(await readFile(path.join(root, 'site', file))).digest('hex').slice(0, 12));
+}
 for (const file of ['index.html', 'styles.css', 'trust.css', 'app.js', 'favicon.svg']) {
-  const source = await readFile(path.join(root, 'site', file), 'utf8');
+  let source = await readFile(path.join(root, 'site', file), 'utf8');
+  if (file === 'index.html') {
+    for (const [asset, digest] of cacheVersions) source = source.replaceAll(`"${asset}"`, `"${asset}?v=${digest}"`);
+  }
   await writeFile(path.join(output, file), source.replaceAll('{{VERSION}}', version));
 }
 // Explicit public asset allowlist: never publish the repository or runtime state.
