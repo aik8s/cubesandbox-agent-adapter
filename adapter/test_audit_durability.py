@@ -264,7 +264,10 @@ os._exit(17)
         journal.db.set_authorizer(authorizer)
         with self.assertRaises(AuditUnavailable):
             journal.append({"phase": "result"}, finish="op1")
-        journal.db.set_authorizer(None)
+        # Python 3.10 may retain the denied authorizer after set_authorizer(None).
+        # Reopening also proves that the pending intent survives process recovery.
+        journal.close()
+        journal = self.journal()
         self.assertEqual(len(journal.pending_operations()), 1)
         self.assertEqual(len(journal.recent()), 1)
         self.assertTrue(journal.failed)
