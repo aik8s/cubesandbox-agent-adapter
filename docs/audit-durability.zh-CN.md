@@ -159,3 +159,11 @@ HS256 回执及 MicroVM 清理验证。
 ![v0.5.0 持久审计与 Pod 重建验收](assets/audit-durability-acceptance/02-persistence-restart.png)
 
 ![v0.5.0 故障闭锁、核对恢复与隐私验收](assets/audit-durability-acceptance/03-fail-closed-recovery.png)
+
+标签发布后，又将公开镜像的 linux/amd64 manifest 镜像到隔离仓库，并在同一保留型
+PVC 上完成正式镜像升级。最终镜像返回 `version=0.5.0`、`audit_mode=required`、
+`audit_ready=true`，未决操作为 0。随后 Claude Code 2.1.265 对正式镜像完成同一条
+五工具可信任务链路；活动租约回到 0，审计权威库保持未阻断。这是额外客户端补测，
+不反向修改上面的候选镜像 23/23 报告。
+
+![Claude Code 对 v0.5.0 的可信任务验收](assets/trusted-execution-apps/05-claude-code-trusted-task.png)

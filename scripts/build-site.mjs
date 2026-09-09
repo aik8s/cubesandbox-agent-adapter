@@ -21,7 +21,7 @@ for (const file of ['index.html', 'styles.css', 'trust.css', 'app.js', 'favicon.
   await writeFile(path.join(output, file), source.replaceAll('{{VERSION}}', version));
 }
 // Explicit public asset allowlist: never publish the repository or runtime state.
-for (const file of ['01-openclaw-trusted-task.jpg', '02-dsh-trusted-task.jpg', '03-codex-trusted-task.png', '04-hermes-trusted-task.jpg']) {
+for (const file of ['01-openclaw-trusted-task.jpg', '02-dsh-trusted-task.jpg', '03-codex-trusted-task.png', '04-hermes-trusted-task.jpg', '05-claude-code-trusted-task.png']) {
   await copyFile(path.join(root, 'docs/assets/trusted-execution-apps', file), path.join(output, 'assets', file));
 }
 for (const file of ['02-plan-and-approval.jpg', '03-execution-output-cleanup.jpg', '04-signed-receipt.jpg', '05-failure-handling.jpg']) {

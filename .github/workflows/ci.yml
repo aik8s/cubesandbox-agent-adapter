@@ -45,8 +45,12 @@ jobs:
           CUBE_TEST_REDIS_URL: redis://127.0.0.1:6379/15
           CUBE_TEST_REDIS_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
       - run: python -m unittest -v plugins/hermes/test_plugin.py
+      - run: python tests/acceptance/test_claude_code_live_smoke.py -v
       - if: matrix.python == '3.12'
-        run: ruff check adapter plugins/hermes
+        run: >-
+          ruff check adapter plugins/hermes
+          tests/acceptance/claude_code_live_smoke.py
+          tests/acceptance/test_claude_code_live_smoke.py
       - if: matrix.python == '3.12'
         run: mypy adapter plugins/hermes
 

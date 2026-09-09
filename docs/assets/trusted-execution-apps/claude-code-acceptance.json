@@ -1,0 +1,53 @@
+{
+  "adapter": {
+    "audit_blocked": false,
+    "audit_incomplete_operations": 0,
+    "audit_mode": "required",
+    "audit_pending_deliveries": 0,
+    "audit_ready": true,
+    "image_platform_digest": "sha256:e87df355884aa799004df4b2e93deb876339e5f5506ee8cad711c56ca40baafd",
+    "version": "0.5.0"
+  },
+  "client": {
+    "name": "Claude Code",
+    "native_capture_version": "2.1.265",
+    "runner_replay_version": "2.1.266"
+  },
+  "evidence_date": "2026-09-09",
+  "direct_execution": {
+    "active_leases_after": 0,
+    "cleanup": "released",
+    "output": "CLAUDE_CODE_CUBESANDBOX_OK",
+    "permission_denials": 0,
+    "tool_calls": [
+      "cube_acquire",
+      "cube_exec",
+      "cube_status",
+      "cube_release"
+    ]
+  },
+  "trusted_execution": {
+    "active_leases_after": 0,
+    "cleanup": "verified",
+    "permission_denials": 0,
+    "receipt_algorithm": "HS256",
+    "runner_replay_tool_calls": [
+      "cube_task_plan",
+      "cube_task_submit",
+      "cube_task_status",
+      "cube_task_status",
+      "cube_task_result",
+      "cube_task_receipt"
+    ],
+    "state": "succeeded",
+    "tool_calls": [
+      "cube_task_plan",
+      "cube_task_submit",
+      "cube_task_status",
+      "cube_task_result",
+      "cube_task_receipt"
+    ]
+  },
+  "result": "PASS",
+  "scope": "Real Claude Code MCP client -> v0.5.0 Adapter -> CubeSandbox MicroVM"
+}

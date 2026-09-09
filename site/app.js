@@ -4,6 +4,7 @@ const clients = {
   openclaw: ['OpenClaw', '01-openclaw-trusted-task.jpg', 1720, 1238],
   dsh: ['DSH', '02-dsh-trusted-task.jpg', 1720, 1238],
   codex: ['Codex', '03-codex-trusted-task.png', 1600, 337],
+  claude: ['Claude Code', '05-claude-code-trusted-task.png', 1450, 560],
   hermes: ['Hermes Agent', '04-hermes-trusted-task.jpg', 1720, 900],
 };
 let language = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'zh';

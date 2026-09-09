@@ -5,14 +5,14 @@
 [Project website](https://aik8s.github.io/cubesandbox-agent-adapter/) · [v0.5.0 changelog](CHANGELOG.md) · [Website publishing](docs/website.md)
 
 Community integration that routes OpenClaw, DeepSeek Harness (DSH), Hermes
-Agent and MCP hosts such as Codex into policy-controlled
+Agent and MCP hosts such as Codex or Claude Code into policy-controlled
 [CubeSandbox](https://github.com/TencentCloud/CubeSandbox) MicroVMs.
 
 ```text
 OpenClaw Tool Plugin ──────────┐
 DSH Cordis Plugin ─────────────┤
 Hermes Tool Plugin ────────────┼─ authenticated HTTP ─→ Adapter ─→ Cube SDK ─→ MicroVM
-Codex / MCP host ─→ MCP stdio ─┘                              │
+Codex / Claude Code / MCP host ─→ MCP stdio ─┘                │
                                                             └─ durable redacted audit
 ```
 
@@ -97,10 +97,10 @@ prompts, dependency-free task scripts, and synthetic fixtures:
 
 ## Hands-on evidence
 
-The following screenshots come from real OpenClaw, DSH, Hermes Agent and Codex
-sessions connected to a Kubernetes-hosted CubeSandbox deployment. They are
-evidence from a functional lab run, not a benchmark or a production-readiness
-claim.
+The following screenshots come from real OpenClaw, DSH, Hermes Agent, Codex and
+Claude Code sessions connected to a Kubernetes-hosted CubeSandbox deployment.
+They are evidence from functional lab runs, not a benchmark or a
+production-readiness claim.
 
 OpenClaw called only the Adapter's `cube_exec` and `cube_release` tools. The
 result identifies `cubesandbox-microvm` as the executor and returns only the
@@ -191,7 +191,14 @@ Codex used the Adapter's stdio MCP facade with only `cube_acquire`, `cube_exec`,
 
 ![Codex application using CubeSandbox through MCP in light mode](docs/assets/v0.3-acceptance/13-codex-application.png)
 
-#### Trusted-task feature through four real clients
+Claude Code was aligned with that direct MCP path against v0.5.0 on
+2026-09-09. With a separate least-privilege principal it completed
+`cube_acquire` → `cube_exec` → `cube_status` → `cube_release`, returned the
+expected output marker, and released the MicroVM:
+
+![Claude Code application using CubeSandbox through MCP in light mode](docs/assets/v0.5-acceptance/14-claude-code-application.png)
+
+#### Trusted-task feature through real clients
 
 The newer policy-controlled flow was also exercised on 2026-09-04 from all four
 client applications. Each run used only `cube_task_plan` → `cube_task_submit` →
@@ -205,6 +212,17 @@ a `succeeded` task, verified MicroVM cleanup, and an HS256 receipt.
 ![Codex trusted-task run through MCP in its native light TUI](docs/assets/trusted-execution-apps/03-codex-trusted-task.png)
 
 ![Hermes trusted-task run in its native light Dashboard](docs/assets/trusted-execution-apps/04-hermes-trusted-task.jpg)
+
+On 2026-09-09, Claude Code 2.1.265 was additionally exercised against the
+v0.5.0 release image through the same strict stdio MCP facade. Its native light
+TUI records five CubeSandbox calls and the verified terminal outcome:
+
+![Claude Code trusted-task run through MCP in its native light TUI](docs/assets/trusted-execution-apps/05-claude-code-trusted-task.png)
+
+The redacted machine-readable result is
+[`claude-code-acceptance.json`](docs/assets/trusted-execution-apps/claude-code-acceptance.json),
+and the reproducible live runner is
+[`claude_code_live_smoke.py`](tests/acceptance/claude_code_live_smoke.py).
 
 In the Hermes capture, “6 tools” means one `tool_describe` discovery call plus
 the five trusted-task calls. Detailed acceptance scope and backend evidence are
@@ -506,6 +524,22 @@ variables and set `CUBE_ADAPTER_CLIENT_CERT_FILE` plus
 server certificate. The host-owned `CUBE_ADAPTER_PROFILE` is deliberately not
 exposed as a model-selected tool argument.
 
+The same JSON is accepted directly by Claude Code as well as Codex-compatible
+MCP hosts. Keep credentials in the referenced files, then launch Claude Code
+with only that explicit MCP configuration:
+
+```bash
+claude --mcp-config examples/trusted-execution/mcp-host.example.json \
+  --strict-mcp-config
+```
+
+For a release acceptance run, use
+`tests/acceptance/claude_code_live_smoke.py --mcp-config /path/to/mcp.json`.
+The default runner permits only the five trusted-task tools. Pass
+`--flow direct` with a separately scoped principal to verify the same
+acquire/exec/status/release path as Codex. It emits only a redacted summary;
+Claude login/model credentials are never placed in the MCP file.
+
 The facade also exposes `cube_task_plan`, `cube_task_submit`,
 `cube_task_status`, `cube_task_result`, `cube_task_cancel`, and
 `cube_task_receipt`. Approval is intentionally not an Agent MCP tool; a
@@ -534,9 +568,11 @@ In required mode the SQLite journal is authoritative; JSONL/HTTP/stdout are
 replicas and may lag or contain duplicate event IDs. An unresolved crash window
 blocks new operations until explicit offline reconciliation.
 
-The v0.5.0 Kubernetes acceptance exercised real MicroVM tasks through all four
-client adapters, Pod/PVC restart preservation, exclusive locking, a 503 safety
-barrier, offline reconciliation and an in-Pod credential-leak scan. See the
+The v0.5.0 Kubernetes acceptance exercised real MicroVM tasks through the four
+original client adapters, Pod/PVC restart preservation, exclusive locking, a
+503 safety barrier, offline reconciliation and an in-Pod credential-leak scan.
+Claude Code then passed the same trusted-task path against the final release
+image as a fifth client. See the
 [record and all Light evidence](docs/audit-durability.md#kubernetes-acceptance-record--2026-09-09).
 
 ![v0.5.0 fail-closed audit acceptance](docs/assets/audit-durability-acceptance/03-fail-closed-recovery.png)

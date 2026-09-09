@@ -152,3 +152,13 @@ results, not an interactive product console. Source data and renderers live in
 ![v0.5.0 persistent audit and Pod restart acceptance](assets/audit-durability-acceptance/02-persistence-restart.png)
 
 ![v0.5.0 fail-closed, reconciliation and privacy acceptance](assets/audit-durability-acceptance/03-fail-closed-recovery.png)
+
+After the tag was published, its public linux/amd64 manifest was mirrored into
+the isolated registry and deployed over the same retained PVC. The final image
+reported `version=0.5.0`, `audit_mode=required`, and `audit_ready=true` with no
+incomplete operations. Claude Code 2.1.265 then completed the five-tool
+trusted-task flow against that final image; active leases returned to zero and
+the audit authority remained unblocked. This is an additional client run, not
+a retroactive change to the 23/23 release-candidate report above.
+
+![Claude Code v0.5.0 trusted-task acceptance](assets/trusted-execution-apps/05-claude-code-trusted-task.png)

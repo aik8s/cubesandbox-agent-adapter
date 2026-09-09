@@ -47,6 +47,10 @@ and Hermes; update the upstream drafts to cite it before opening an external
 pull request. No external pull request is created from this working tree
 automatically.
 
+The v0.5.0 follow-up additionally validates Claude Code through both the
+trusted-task MCP flow and the Codex-equivalent acquire/exec/status/release
+flow. Its light native-client captures can be cited from the main README.
+
 ## Feature decisions / 功能决策
 
 - Persistent Volume and Checkpoint are separate profile capabilities; neither

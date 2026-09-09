@@ -173,6 +173,26 @@ one `tool_describe` discovery call plus the same five `cube_task_*` calls:
 
 ![Hermes trusted-task run in its native Dashboard](assets/trusted-execution-apps/04-hermes-trusted-task.jpg)
 
+Claude Code 2.1.265 was tested separately on 2026-09-09 against the v0.5.0
+release image. A strict MCP configuration disabled every other MCP server and
+allowed only the same five trusted-task tools. The native TUI shows five
+CubeSandbox calls, `succeeded`, verified cleanup, and an HS256 receipt:
+
+![Claude Code trusted-task run through MCP in its native TUI](assets/trusted-execution-apps/05-claude-code-trusted-task.png)
+
+The run is reproducible with
+[`claude_code_live_smoke.py`](../tests/acceptance/claude_code_live_smoke.py).
+Its committed result is
+[`claude-code-acceptance.json`](assets/trusted-execution-apps/claude-code-acceptance.json);
+the raw Claude event stream is intentionally not retained because it can
+contain opaque task and receipt identifiers.
+
+Claude Code was also checked against the Codex-equivalent direct path with a
+separate principal restricted to acquire, exec, status, and release. The TUI
+shows the expected command marker and confirmed release:
+
+![Claude Code direct CubeSandbox MCP acceptance](assets/v0.5-acceptance/14-claude-code-application.png)
+
 Publication captures omit tokens, Adapter and model-gateway addresses, complete
 Plan/Task/Sandbox identifiers, and private network details. The raw signed
 receipt payload in the Hermes history is visibly redacted; its final status,

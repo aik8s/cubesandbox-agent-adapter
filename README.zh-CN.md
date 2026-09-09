@@ -5,14 +5,14 @@
 [项目官网](https://aik8s.github.io/cubesandbox-agent-adapter/) · [v0.5.0 更新日志](CHANGELOG.md) · [官网发布说明](docs/website.md)
 
 这是一个社区集成项目，用于把 OpenClaw、DeepSeek Harness（DSH）、Hermes
-Agent 以及 Codex 等 MCP Host 的工具调用，经受控策略路由到
+Agent 以及 Codex、Claude Code 等 MCP Host 的工具调用，经受控策略路由到
 [CubeSandbox](https://github.com/TencentCloud/CubeSandbox) MicroVM 中执行。
 
 ```text
 OpenClaw Tool Plugin ──────────┐
 DSH Cordis Plugin ─────────────┤
 Hermes Tool Plugin ────────────┼─ 认证 HTTP ─→ Adapter ─→ Cube SDK ─→ MicroVM
-Codex / MCP Host ─→ MCP stdio ─┘                          │
+Codex / Claude Code / MCP Host ─→ MCP stdio ─┘            │
                                                         └─ 持久化脱敏审计
 ```
 
@@ -84,9 +84,9 @@ MicroVM 清理和签名 Execution Receipt；Action Scope 允许 Agent 使用 `ta
 
 ## 实战证据
 
-下面不是产品效果图，而是 OpenClaw、DSH、Hermes Agent、Codex、Adapter 和
-Kubernetes 上的 CubeSandbox 实际联调截图。它们证明的是一次功能实验已经跑通，
-不代表性能基准或生产就绪。
+下面不是产品效果图，而是 OpenClaw、DSH、Hermes Agent、Codex、Claude Code、
+Adapter 和 Kubernetes 上的 CubeSandbox 实际联调截图。它们证明的是功能实验已经
+跑通，不代表性能基准或生产就绪。
 
 ### OpenClaw 直接调用 Adapter
 
@@ -180,7 +180,13 @@ Codex 通过 Adapter 的 stdio MCP 门面，仅启用 `cube_acquire`、`cube_exe
 
 ![Codex 应用通过 MCP 以 Light 模式使用 CubeSandbox](docs/assets/v0.3-acceptance/13-codex-application.png)
 
-#### 四个真实客户端调用可信任务新功能
+2026-09-09 又在 v0.5.0 上将 Claude Code 补齐到相同直连 MCP 能力。使用独立最小权限
+主体，Claude 完成 `cube_acquire` → `cube_exec` → `cube_status` → `cube_release`，
+返回预期输出标记并释放 MicroVM：
+
+![Claude Code 应用通过 MCP 以 Light 模式使用 CubeSandbox](docs/assets/v0.5-acceptance/14-claude-code-application.png)
+
+#### 真实客户端调用可信任务新功能
 
 2026-09-04 又从四个客户端应用实测了新的策略受控链路。每轮只调用
 `cube_task_plan` → `cube_task_submit` → `cube_task_status` → `cube_task_result` →
@@ -194,6 +200,17 @@ Codex 通过 Adapter 的 stdio MCP 门面，仅启用 `cube_acquire`、`cube_exe
 ![Codex 在自身 Light 模式 TUI 中通过 MCP 完成可信任务](docs/assets/trusted-execution-apps/03-codex-trusted-task.png)
 
 ![Hermes 在自身 Light 模式 Dashboard 中完成可信任务](docs/assets/trusted-execution-apps/04-hermes-trusted-task.jpg)
+
+2026-09-09 又使用 Claude Code 2.1.265 对 v0.5.0 正式镜像做了补充验收。Claude
+通过同一个严格 stdio MCP 门面完成 5 次 CubeSandbox 调用；下面是客户端自身的
+Light 模式 TUI，直接显示工具次数、调用顺序和最终验收结果：
+
+![Claude Code 在自身 Light 模式 TUI 中通过 MCP 完成可信任务](docs/assets/trusted-execution-apps/05-claude-code-trusted-task.png)
+
+对应的脱敏机器可读结果为
+[`claude-code-acceptance.json`](docs/assets/trusted-execution-apps/claude-code-acceptance.json)，
+可复现脚本为
+[`claude_code_live_smoke.py`](tests/acceptance/claude_code_live_smoke.py)。
 
 Hermes 截图里的“6 tools”由 1 次 `tool_describe` 工具发现和 5 次可信任务调用组成。
 更完整的验收范围和后端证据见[可信执行文档](docs/trusted-execution.zh-CN.md)。
@@ -480,6 +497,20 @@ mTLS Adapter 时可省略 Token 变量，并设置 `CUBE_ADAPTER_CLIENT_CERT_FIL
 `CUBE_ADAPTER_CLIENT_KEY_FILE`；`CUBE_ADAPTER_CA_FILE` 仍用于校验服务端证书。
 `CUBE_ADAPTER_PROFILE` 由宿主持有，不暴露成模型可选的工具参数。
 
+同一份 JSON 可直接给 Claude Code 和 Codex 类 MCP Host 使用。凭据继续只保存在配置
+引用的文件里，然后让 Claude Code 仅加载这份显式 MCP 配置：
+
+```bash
+claude --mcp-config examples/trusted-execution/mcp-host.example.json \
+  --strict-mcp-config
+```
+
+发布验收可运行
+`tests/acceptance/claude_code_live_smoke.py --mcp-config /path/to/mcp.json`。脚本只允许
+5 个可信任务工具；使用另一个最小权限主体并传入 `--flow direct`，还可验证与 Codex
+一致的 acquire/exec/status/release 链路。脚本只输出脱敏摘要，Claude 登录/模型凭据
+不会写入 MCP 文件。
+
 MCP 还提供 `cube_task_plan`、`cube_task_submit`、`cube_task_status`、
 `cube_task_result`、`cube_task_cancel` 和 `cube_task_receipt`。审批故意不作为 Agent MCP
 工具暴露，必须由独立 `approver` 身份调用认证 HTTP 接口。
@@ -504,8 +535,9 @@ v0.5.0 默认启用 `required` 强审计，以持久化 SQLite 日志为权威�
 可选 `/audit` HTML 页面默认关闭，只用于受保护测试网络的演示。真实部署应把
 JSONL 事件发送到持久、访问受控的审计流水线。
 
-v0.5.0 Kubernetes 验收覆盖四客户端真实 MicroVM 任务、Pod/PVC 重启保留、独占锁、
-503 安全屏障、离线核对恢复以及 Pod 内密钥泄露扫描。完整记录与 Light 模式证据见
+v0.5.0 Kubernetes 验收覆盖最初四个客户端的真实 MicroVM 任务、Pod/PVC 重启保留、
+独占锁、503 安全屏障、离线核对恢复以及 Pod 内密钥泄露扫描；随后 Claude Code 作为
+第五个客户端对正式镜像通过同一可信任务链路。完整记录与 Light 模式证据见
 [强审计验收章节](docs/audit-durability.zh-CN.md#kubernetes-验收记录2026-09-09)。
 
 ![v0.5.0 故障闭锁强审计验收](docs/assets/audit-durability-acceptance/03-fail-closed-recovery.png)

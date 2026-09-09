@@ -24,16 +24,17 @@ node scripts/build-site.mjs
 python3 -m http.server 19120 --bind 127.0.0.1 --directory dist/site
 ```
 
-Open <http://127.0.0.1:19120/>. Test language switching, all four client screenshot
-tabs and five trust/audit tabs (including arrow keys), copy feedback, documentation links, and mobile
-layout. The build reads `VERSION`; do not hardcode a new release in the page.
+Open <http://127.0.0.1:19120/>. Test language switching, all five client
+screenshot tabs and five trust/audit tabs (including arrow keys), copy feedback,
+documentation links, and mobile layout. The build reads `VERSION`; do not
+hardcode a new release in the page.
 CSS and JavaScript URLs include content hashes so a new page does not reuse
 scripts from an earlier deployment in the browser cache.
 
 `.github/workflows/pages.yml` builds on relevant pull requests and deploys on
 matching pushes to `main` (or manual dispatch). In repository Settings → Pages,
 the source must be **GitHub Actions**. Only `dist/site` is uploaded: the five
-static site files and ten explicitly allowlisted public screenshots. Use a
+static site files and eleven explicitly allowlisted public screenshots. Use a
 clean build directory when previewing after changing the allowlist; CI starts
 from a fresh checkout. Never add `.env`, runtime logs or internal connection
 details to the site or its build output.

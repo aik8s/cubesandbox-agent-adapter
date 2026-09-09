@@ -47,6 +47,29 @@ and give a different production identity role `approver`; see
 Then adapt the paths and certificates in
 [`mcp-host.example.json`](mcp-host.example.json).
 
+Both Codex-style MCP hosts and Claude Code can consume that stdio definition.
+Claude Code users can keep the token and CA in the referenced files and load
+only the reviewed server list:
+
+```bash
+claude --mcp-config ./mcp-host.example.json --strict-mcp-config
+```
+
+Do not put Anthropic/model-provider credentials in the MCP JSON; Claude Code
+manages its own login separately. To reproduce the five-tool release check,
+run from the repository root:
+
+```bash
+python tests/acceptance/claude_code_live_smoke.py \
+  --mcp-config /absolute/path/to/your-claude-mcp.json
+```
+
+The runner disables built-in tools, allows only the five trusted-task MCP
+tools, and writes no raw event stream. Its stdout is a redacted PASS/fail
+summary suitable for acceptance records. To check the Codex-equivalent direct
+path, use a different MCP config whose principal has only `lease:acquire`,
+`exec:run`, `lease:status`, and `lease:release`, then add `--flow direct`.
+
 The task-only token must not include `exec:run`, `job:*`, `file:*`,
 `artifact:*`, `pty:*`, or `checkpoint:*`. Even though the generic MCP facade
 advertises those tools, the HTTP boundary rejects them. `allowed_task_templates`

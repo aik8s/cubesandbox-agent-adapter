@@ -177,7 +177,7 @@ OpenClaw、DSH、Codex/MCP 与 Hermes 均完成真实 plan、submit、status、r
 
 ### 客户端自身界面实测证据
 
-上面的证据卡用于汇总和关联后端验收结果；下面四张图则直接来自各客户端自身的
+上面的证据卡用于汇总和关联后端验收结果；下列截图直接来自各客户端自身的
 Light 模式界面。每个客户端均实际调用了 `cube_task_plan`、`cube_task_submit`、
 `cube_task_status`、`cube_task_result` 和 `cube_task_receipt`，最终状态为
 `succeeded`，MicroVM 清理为 `verified`，Receipt 算法为 HS256。
@@ -198,6 +198,23 @@ Hermes Agent 0.20.6 官方 Dashboard；会话中的 6 tools 包含 1 次
 `tool_describe` 工具发现和同样的 5 次 `cube_task_*` 调用：
 
 ![Hermes 在自身 Dashboard 中完成可信任务](assets/trusted-execution-apps/04-hermes-trusted-task.jpg)
+
+Claude Code 2.1.265 于 2026-09-09 使用 v0.5.0 正式镜像单独补测。严格 MCP 配置
+禁用了其他 MCP Server，并且只允许同样的 5 个可信任务工具。原生 TUI 直接显示
+5 次 CubeSandbox 调用、`succeeded`、清理 `verified` 和 HS256 回执：
+
+![Claude Code 在自身 TUI 中通过 MCP 完成可信任务](assets/trusted-execution-apps/05-claude-code-trusted-task.png)
+
+可通过
+[`claude_code_live_smoke.py`](../tests/acceptance/claude_code_live_smoke.py)
+复现实测，提交到仓库的是脱敏结果
+[`claude-code-acceptance.json`](assets/trusted-execution-apps/claude-code-acceptance.json)。
+原始 Claude 事件流可能含不透明 Task/Receipt 标识，因此不做留存。
+
+另外还使用独立主体验证了与 Codex 对齐的直连路径；权限仅含 acquire、exec、status、
+release。TUI 中直接显示预期命令标记与资源释放结果：
+
+![Claude Code 直连 CubeSandbox MCP 验收](assets/v0.5-acceptance/14-claude-code-application.png)
 
 发布版截图不包含令牌、Adapter/模型网关地址、完整 Plan/Task/Sandbox 标识或内网信息。
 Hermes 历史记录里的原始签名 Receipt 载荷已做可见遮挡，但最终状态、清理结果和签名

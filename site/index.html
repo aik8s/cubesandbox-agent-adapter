@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
-  <meta name="description" content="Connect OpenClaw, DSH, Hermes and Codex to policy-controlled CubeSandbox MicroVMs. Deployment guides, trusted tasks and real client evidence.">
+  <meta name="description" content="Connect OpenClaw, DSH, Hermes, Codex and Claude Code to policy-controlled CubeSandbox MicroVMs. Deployment guides, trusted tasks and real client evidence.">
   <meta name="theme-color" content="#faf9f5">
   <title>CubeSandbox Agent Adapter — 可信执行、权限与审计</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -36,7 +36,7 @@
       <aside class="flow-card" aria-label="Illustrative execution workflow">
         <div class="card-top"><span data-en="EXECUTION WORKFLOW">执行流程示意</span><span class="tiny-cube">◇</span></div>
         <div class="flow-label" data-en="01 / YOUR WORKSPACE">01 / 你的工作空间</div>
-        <div class="clients"><span>OpenClaw</span><span>DSH</span><span>Hermes</span><span>Codex / MCP</span></div>
+        <div class="clients"><span>OpenClaw</span><span>DSH</span><span>Hermes</span><span>Codex / MCP</span><span>Claude Code</span></div>
         <div class="connector">↓ <span data-en="Authenticated entry point">经过认证的入口</span></div>
         <div class="adapter-box"><div class="flow-label">02 / AGENT ADAPTER</div><strong data-en="Policy before execution.">先约束，再执行。</strong><div class="chips"><span data-en="Task template">任务模板</span><span data-en="Action scope">操作权限</span><span data-en="Independent approval">独立审批</span></div></div>
         <div class="connector">↓ <span data-en="Fixed execution profile">固定执行配置</span></div>
@@ -44,7 +44,7 @@
         <div class="receipt"><span>✓</span><span data-en="Cleanup + signed execution receipt">资源清理 + 签名执行回执</span></div>
       </aside>
     </section>
-    <div class="metrics wrap"><div><strong>4</strong><span data-en="Client integrations">客户端集成</span></div><div><strong>19</strong><span data-en="Tools per plugin">每个插件的工具数</span></div><div><strong>23/23</strong><span data-en="Recorded acceptance checks¹">已记录的验收检查¹</span></div><p data-en="¹ Functional lab evidence, September 2026. Not a live status or production certification.">¹ 2026 年 9 月功能实验室验收；非实时状态，也非生产安全认证。</p></div>
+    <div class="metrics wrap"><div><strong>5</strong><span data-en="Client integrations">客户端集成</span></div><div><strong>19</strong><span data-en="Tools per plugin">每个插件的工具数</span></div><div><strong>23/23</strong><span data-en="Recorded release-candidate checks¹">已记录的候选版本检查¹</span></div><p data-en="¹ Functional lab evidence, September 2026, plus documented post-release Claude runs. Not a live status or production certification.">¹ 2026 年 9 月功能实验室验收，另有已记录的 Claude 正式镜像补测；非实时状态，也非生产安全认证。</p></div>
     <section class="section wrap" id="features">
       <p class="eyebrow" data-en="CONTROLLED BY DESIGN">将控制落实到执行路径</p><h2 data-en="More than a remote shell.">不只是一个远程 Shell。</h2><p class="section-intro" data-en="Keep resources on the production side. Give local agents a constrained path to named workloads—not unrestricted production access.">资源留在生产侧，为本地 Agent 提供受约束的任务入口，而不是无限制的生产环境访问权。</p>
       <div class="feature-grid">
@@ -91,9 +91,9 @@
     <section class="evidence-section" id="evidence"><div class="wrap section">
       <div class="section-heading"><div><p class="eyebrow" data-en="REAL CLIENTS. REAL RUNS.">真实客户端，真实调用</p><h2 data-en="See it in your agent.">在熟悉的应用里，跑起来。</h2></div><a href="https://github.com/aik8s/cubesandbox-agent-adapter/blob/main/docs/trusted-execution.md" data-en="Read the test evidence ↗">阅读验收记录 ↗</a></div>
       <p class="section-intro" data-en="Native application captures from real trusted-task runs: plan, submit, status, result and receipt. Published captures are redacted and shown in light mode.">以下是可信任务的应用原生截图，覆盖计划、提交、状态、结果和回执调用。已脱敏，统一使用浅色模式。</p>
-      <div class="tabs" role="tablist" aria-label="Agent client screenshots"><button role="tab" id="tab-openclaw" aria-controls="client-panel" aria-selected="true" data-client="openclaw">OpenClaw</button><button role="tab" id="tab-dsh" aria-controls="client-panel" aria-selected="false" tabindex="-1" data-client="dsh">DSH</button><button role="tab" id="tab-codex" aria-controls="client-panel" aria-selected="false" tabindex="-1" data-client="codex">Codex</button><button role="tab" id="tab-hermes" aria-controls="client-panel" aria-selected="false" tabindex="-1" data-client="hermes">Hermes Agent</button></div>
+      <div class="tabs" role="tablist" aria-label="Agent client screenshots"><button role="tab" id="tab-openclaw" aria-controls="client-panel" aria-selected="true" data-client="openclaw">OpenClaw</button><button role="tab" id="tab-dsh" aria-controls="client-panel" aria-selected="false" tabindex="-1" data-client="dsh">DSH</button><button role="tab" id="tab-codex" aria-controls="client-panel" aria-selected="false" tabindex="-1" data-client="codex">Codex</button><button role="tab" id="tab-claude" aria-controls="client-panel" aria-selected="false" tabindex="-1" data-client="claude">Claude Code</button><button role="tab" id="tab-hermes" aria-controls="client-panel" aria-selected="false" tabindex="-1" data-client="hermes">Hermes Agent</button></div>
       <figure id="client-panel" role="tabpanel" aria-labelledby="tab-openclaw" tabindex="0"><div class="screenshot-frame"><img id="client-shot" src="assets/01-openclaw-trusted-task.jpg" width="1720" height="1238" alt="OpenClaw native application trusted-task execution screenshot" loading="lazy"></div><figcaption><span id="client-caption">OpenClaw · 原生应用可信任务实测</span><a id="full-shot" href="assets/01-openclaw-trusted-task.jpg" target="_blank" rel="noopener" data-en="Open full image ↗">打开原图 ↗</a></figcaption></figure>
-      <noscript><p>More screenshots: <a href="assets/02-dsh-trusted-task.jpg">DSH</a> · <a href="assets/03-codex-trusted-task.png">Codex</a> · <a href="assets/04-hermes-trusted-task.jpg">Hermes</a></p></noscript>
+      <noscript><p>More screenshots: <a href="assets/02-dsh-trusted-task.jpg">DSH</a> · <a href="assets/03-codex-trusted-task.png">Codex</a> · <a href="assets/05-claude-code-trusted-task.png">Claude Code</a> · <a href="assets/04-hermes-trusted-task.jpg">Hermes</a></p></noscript>
     </div></section>
     <section class="section wrap" id="deploy"><p class="eyebrow" data-en="START SMALL. GROW WITH YOUR TEAM.">从单机开始，按需扩展</p><h2 data-en="Choose your deployment path.">选择适合你的部署方式。</h2><p class="prerequisite" data-en="Prerequisite: a reachable CubeSandbox backend and a READY sandbox template. The Adapter does not install CubeSandbox or your Agent application.">前置条件：可访问的 CubeSandbox 后端与 READY 沙箱模板。Adapter 不会安装 CubeSandbox 或 Agent 应用。</p>
       <div class="deploy-grid"><article class="deploy-card"><span class="tag" data-en="QUICK START">新手推荐</span><h3>Docker Compose</h3><p data-en="Run on a workstation or single server. Use the published multi-architecture image; Kubernetes is not required.">在工作站或单台服务器运行。使用已发布的多架构镜像，无需 Kubernetes。</p><div class="code-label" data-en="Pull the image · configure before running">拉取镜像 · 运行前需配置</div><pre><code id="pull-command">docker pull ghcr.io/aik8s/cubesandbox-agent-adapter:v{{VERSION}}</code></pre><button id="copy" class="copy" type="button" data-en="Copy command">复制命令</button><span id="copy-status" class="fine" role="status"></span><a class="button primary" data-doc="docker" href="https://github.com/aik8s/cubesandbox-agent-adapter/blob/main/docs/deploy-docker.zh-CN.md" data-en="Follow the Docker guide →">跟随 Docker 部署指南 →</a></article>
