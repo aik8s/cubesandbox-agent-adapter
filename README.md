@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[Project website](https://aik8s.github.io/cubesandbox-agent-adapter/) · [Website publishing](docs/website.md)
+[Project website](https://aik8s.github.io/cubesandbox-agent-adapter/) · [v0.5.0 changelog](CHANGELOG.md) · [Website publishing](docs/website.md)
 
 Community integration that routes OpenClaw, DeepSeek Harness (DSH), Hermes
 Agent and MCP hosts such as Codex into policy-controlled
@@ -13,17 +13,17 @@ OpenClaw Tool Plugin ──────────┐
 DSH Cordis Plugin ─────────────┤
 Hermes Tool Plugin ────────────┼─ authenticated HTTP ─→ Adapter ─→ Cube SDK ─→ MicroVM
 Codex / MCP host ─→ MCP stdio ─┘                              │
-                                                            └─ redacted JSONL audit
+                                                            └─ durable redacted audit
 ```
 
 The Adapter is the only component that holds Cube connection settings, full
 Sandbox IDs and traffic tokens. Runtime plugins receive opaque leases and
 return only short Sandbox references to the model.
 
-> **Project status:** v0.4.0 is a production-oriented reference implementation.
-> It supports durable encrypted leases, multi-tenant policy, and approved
-> trusted-task workflows, but still requires deployment-specific hardening and
-> acceptance tests in every target CubeSandbox environment.
+> **Project status:** v0.5.0 is a production-oriented reference implementation.
+> It adds fail-closed durable audit to encrypted leases, multi-tenant policy,
+> and approved trusted-task workflows. Deployment-specific hardening and
+> acceptance tests are still required in every target CubeSandbox environment.
 
 ## Start here
 
@@ -235,11 +235,12 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
 - one-command installers for Kubernetes, OpenClaw, DSH and Hermes Agent;
 - Docker Compose for local development;
 - Helm chart, plain Kubernetes manifest, tests and release workflows;
-- Redis-backed encrypted recovery and multi-replica distributed locking;
+- Redis-backed encrypted recovery and distributed locking (multi-replica only
+  with the explicit `best_effort` audit downgrade);
 - per-tenant bearer, OIDC and TLS/mTLS authentication;
 - Prometheus metrics, dependency-aware readiness and pluggable audit sinks;
 - an official-SDK MCP stdio facade;
-- append-only, redacted JSONL audit events;
+- fail-closed durable audit with redacted events and retryable sink delivery;
 - server-enforced training/data-cleaning TaskTemplates with JSON Schema,
   action scopes, independent approval, output policy, cleanup, and signed
   Execution Receipts.
@@ -268,7 +269,7 @@ a CubeSandbox 0.7.0 Kubernetes lab cluster.
 Clone the repository:
 
 ```bash
-git clone --branch v0.4.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
+git clone --branch v0.5.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
 cd cubesandbox-agent-adapter
 ```
 
@@ -299,13 +300,17 @@ Override the image, namespace or Secret when needed:
   --namespace my-agent-runtime \
   --release cube-adapter \
   --secret existing-adapter-secret \
-  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.4.0 \
+  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.5.0 \
   --cube-api-url https://cube-api.example.internal \
   --cube-api-port 443 \
   --cube-proxy-host cube-proxy.example.internal \
   --cube-proxy-port 443 \
+  --audit-storage-class <durable-local-or-block-storage-class> \
   --template agent-code
 ```
+
+v0.5.0 strong audit needs a default durable local/block StorageClass, or the
+explicit `--audit-storage-class` value above. Do not select NFS/shared storage.
 
 The default NetworkPolicy accepts clients with this Pod label in the same
 namespace:
@@ -413,7 +418,7 @@ restriction in the profile or gateway policy used by production sessions.
 ## Docker deployment and local development
 
 For a first installation, follow the [Docker Compose deployment guide](docs/deploy-docker.md).
-It uses the v0.4.0 published image and covers credentials, network addresses,
+It uses the v0.5.0 published image and covers credentials, network addresses,
 health checks, real sandbox acceptance, client integration, and upgrades.
 Docker runs the Adapter; an existing CubeSandbox backend is still required.
 
@@ -508,6 +513,12 @@ separate `approver` identity uses the authenticated HTTP endpoint.
 
 ## Audit
 
+v0.5.0 defaults to fail-closed `required` audit backed by an authoritative
+SQLite journal and retryable delivery outbox. Read
+[durability, deployment and recovery](docs/audit-durability.md): it requires one
+writer and durable local/block storage. Helm creates a PVC by default;
+`best_effort` is an explicit compatibility downgrade that can lose records.
+
 Audit rows contain runtime, keyed session digest, policy, action, request ID,
 short Sandbox reference, duration, outcome and command/path digests. They omit:
 
@@ -519,6 +530,16 @@ short Sandbox reference, duration, outcome and command/path digests. They omit:
 
 The optional `/audit` HTML page is disabled by default and is only a demo. Send
 JSONL events to a durable, access-controlled pipeline in real deployments.
+In required mode the SQLite journal is authoritative; JSONL/HTTP/stdout are
+replicas and may lag or contain duplicate event IDs. An unresolved crash window
+blocks new operations until explicit offline reconciliation.
+
+The v0.5.0 Kubernetes acceptance exercised real MicroVM tasks through all four
+client adapters, Pod/PVC restart preservation, exclusive locking, a 503 safety
+barrier, offline reconciliation and an in-Pod credential-leak scan. See the
+[record and all Light evidence](docs/audit-durability.md#kubernetes-acceptance-record--2026-09-09).
+
+![v0.5.0 fail-closed audit acceptance](docs/assets/audit-durability-acceptance/03-fail-closed-recovery.png)
 
 ## Configuration
 
@@ -594,6 +615,10 @@ Remove the Kubernetes release without deleting a separately managed Secret:
 helm uninstall cube-agent-adapter -n agent-runtime
 ```
 
+The v0.5.0 chart keeps its authoritative audit PVC on uninstall by default.
+Inventory and back it up; delete it only under the deployment's approved audit
+retention procedure.
+
 Disable the OpenClaw integration before removing its package:
 
 ```bash
@@ -611,9 +636,9 @@ hermes plugins disable cube-adapter-tools
 
 ## Security and current limits
 
-- Memory state remains the zero-dependency default and is intentionally
-  single-replica. Redis state is required when `replicaCount > 1`; records are
-  encrypted and operations use renewable distributed locks.
+- Memory state remains the zero-dependency default. v0.5.0 strong audit supports
+  one Adapter writer. Multiple replicas require Redis plus an explicit
+  `best_effort` downgrade; records remain encrypted but audit events may be lost.
 - PTY, SSE output, async cancellation, tenant quotas, and one independent task
   approver are implemented. Quorum approval, external approval callbacks, and
   a general-purpose rate limiter are not.

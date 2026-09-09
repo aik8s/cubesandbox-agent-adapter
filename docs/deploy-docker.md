@@ -1,10 +1,13 @@
 # Deploy the Adapter with Docker Compose
 
+> v0.5.0 defaults to fail-closed durable audit. Keep the named audit volume and
+> read [strong-audit guarantees and recovery](audit-durability.md) before production use.
+
 [简体中文](deploy-docker.zh-CN.md) | [Back to README](../README.md)
 
 Use this path when CubeSandbox is already available and you want to run the
 Adapter on a workstation or a single server. This guide uses the published
-`ghcr.io/aik8s/cubesandbox-agent-adapter:v0.4.0` image for Linux amd64/arm64.
+`ghcr.io/aik8s/cubesandbox-agent-adapter:v0.5.0` image for Linux amd64/arm64.
 Docker Desktop on macOS can run the Linux container too.
 
 ## 1. Prepare the backend and tools
@@ -41,7 +44,7 @@ deployment nor the E2E below calls a model.
 Run this on the Adapter host. All subsequent Compose commands use the repository root:
 
 ```bash
-git clone --branch v0.4.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
+git clone --branch v0.5.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
 cd cubesandbox-agent-adapter
 ```
 
@@ -101,7 +104,8 @@ curl -fsS http://127.0.0.1:18080/healthz
 curl -fsS http://127.0.0.1:18080/readyz
 ```
 
-The version should be `0.4.0`. `/healthz` checks liveness; `/readyz` checks backend
+The version should be `0.5.0`; health must also report `audit_mode: required` and
+`audit_ready: true`. `/healthz` checks liveness; `/readyz` checks backend
 dependencies and templates. Wait for Compose to show `healthy` and readiness to
 succeed before continuing. For startup failures:
 
@@ -217,6 +221,12 @@ the target release's instructions to update the checkout and pinned image in
 `compose.yaml`, then run `pull adapter` and `up -d --no-build adapter`. Recheck
 version, readiness, and E2E. Keep existing keys and check state compatibility
 before rolling back an image.
+
+Upgrading from v0.4.0 creates a new SQLite authority beside the existing JSONL
+export; old JSONL rows are retained but are not retroactively strong-audit
+evidence. Preserve the whole audit volume. An unresolved operation makes
+readiness return 503 and requires the offline reconciliation procedure in the
+[strong-audit guide](audit-durability.md).
 
 ```bash
 docker compose stop adapter

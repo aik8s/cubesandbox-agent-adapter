@@ -47,6 +47,26 @@ class AdapterMetrics:
             ["sink"],
             registry=self.registry,
         )
+        self.audit_required = Gauge(
+            "cube_adapter_audit_required",
+            "Whether fail-closed durable audit is configured.",
+            registry=self.registry,
+        )
+        self.audit_blocked = Gauge(
+            "cube_adapter_audit_blocked",
+            "Whether durable audit blocks guarded calls.",
+            registry=self.registry,
+        )
+        self.audit_pending = Gauge(
+            "cube_adapter_audit_pending_deliveries",
+            "Durable undelivered sink copies; -1 if unavailable.",
+            registry=self.registry,
+        )
+        self.audit_incomplete = Gauge(
+            "cube_adapter_audit_incomplete_operations",
+            "In-flight or unresolved operations; -1 if unavailable.",
+            registry=self.registry,
+        )
         self.gc_actions = Counter(
             "cube_adapter_gc_actions_total",
             "Lease garbage-collection outcomes.",

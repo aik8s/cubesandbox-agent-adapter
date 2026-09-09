@@ -16,7 +16,7 @@ from unittest import mock
 from adapter.config import AdapterConfig, AuthContext, TokenPrincipal
 from adapter.core import AdapterError, CubeAdapter
 from adapter.http_api import make_handler
-from adapter.test_support import FakeSandbox, fake_template
+from adapter.test_support import FakeSandbox, fake_template, reconcile_test_audit
 from scripts.verify_receipt import verify
 
 
@@ -191,6 +191,46 @@ tasks:
         self.assertTrue(self.requester.permits_action("task:status"))
         self.assertFalse(self.requester.permits_action("job:start"))
 
+    def test_audit_failure_prevents_approval_state_change(self):
+        import sqlite3
+        plan = self.adapter.task_plan({'template': 'train-model', 'parameters': {
+            'input': '/workspace/input/training.csv', 'epochs': 20}}, self.requester)
+        with mock.patch.object(self.adapter.audit.journal, '_insert', side_effect=sqlite3.OperationalError('disk full')):
+            with self.assertRaises(AdapterError) as blocked:
+                self.adapter.task_approve(plan['plan_ref'], {}, self.approver)
+        self.assertEqual(blocked.exception.code, 'audit_unavailable')
+        self.assertEqual(self.adapter.state.get_task_plan(plan['plan_ref']).state, 'pending_approval')
+        self.assertEqual(FakeSandbox.created, [])
+
+    def test_audit_failure_prevents_receipt_delivery_and_retry(self):
+        import sqlite3
+        plan = self.adapter.task_plan({'template': 'train-model', 'parameters': {
+            'input': '/workspace/input/training.csv', 'epochs': 20}}, self.requester)
+        self.adapter.task_approve(plan['plan_ref'], {}, self.approver)
+        submitted = self.adapter.task_submit(plan['plan_ref'], {}, self.requester)
+        task = self.adapter.state.get_task(submitted['task_ref'])
+        job = self.adapter.state.get_job(task.job_ref)
+        sandbox = FakeSandbox.created[0]
+        sandbox.files.write(job.exit_path, '0')
+        sandbox.files.write('/workspace/results/metrics.json', '{"accuracy":0.95}')
+        sandbox.files.write('/workspace/results/model.json', '{"weights":[1,2]}')
+        journal = self.adapter.audit.journal
+        insert = journal._insert
+
+        def fail_finalize(event):
+            if event.get('action') == 'task_finalize':
+                raise sqlite3.OperationalError('disk full after cleanup')
+            return insert(event)
+
+        with mock.patch.object(journal, '_insert', side_effect=fail_finalize):
+            with self.assertRaises(AdapterError) as blocked:
+                self.adapter.task_result(task.task_ref, self.requester)
+        self.assertEqual(blocked.exception.code, 'audit_unavailable')
+        self.assertTrue(sandbox.killed)
+        with self.assertRaises(AdapterError):
+            self.adapter.task_receipt(task.task_ref, self.requester)
+        self.assertTrue(journal.pending_operations())
+
     def test_setup_failure_receipt_verifies_sandbox_cleanup(self):
         plan = self.adapter.task_plan(
             {
@@ -206,6 +246,10 @@ tasks:
             with self.assertRaisesRegex(RuntimeError, "launch failed"):
                 self.adapter.task_submit(plan["plan_ref"], {}, self.requester)
 
+        with self.assertRaises(AdapterError) as blocked:
+            self.adapter.task_plan_status(plan["plan_ref"], self.requester)
+        self.assertEqual(blocked.exception.code, 'audit_unavailable')
+        reconcile_test_audit(self.adapter)
         status = self.adapter.task_plan_status(plan["plan_ref"], self.requester)
         task = self.adapter.state.get_task(status["task_ref"])
         self.assertIsNotNone(task)

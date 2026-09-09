@@ -8,6 +8,10 @@ Label each in-namespace Runtime Pod that may call the Adapter:
 
 State mode: {{ ternary "Redis-backed HA/recovery" "in-memory single replica" .Values.state.enabled }}
 Audit storage: {{ ternary "persistent volume" "ephemeral emptyDir" .Values.audit.persistence.enabled }}
+{{- if and .Values.audit.persistence.enabled .Values.audit.persistence.keep }}
+The audit PVC is retained on Helm uninstall. Back it up and delete it only under
+an approved retention procedure.
+{{- end }}
 
 Export audit events to a centralized sink and configure CubeAPI authentication
 before using this deployment beyond a protected test environment.

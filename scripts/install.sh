@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_IMAGE="ghcr.io/aik8s/cubesandbox-agent-adapter:v0.4.0"
+DEFAULT_IMAGE="ghcr.io/aik8s/cubesandbox-agent-adapter:v0.5.0"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -37,7 +37,8 @@ Adapter options:
   --secret NAME             Existing/generated Secret (default: cube-adapter-auth)
   --cube-api-secret NAME    Secret containing CubeAPI key
   --cube-api-key-key KEY    CubeAPI Secret key (default: cube-api-key)
-  --replicas COUNT          Adapter replicas (default: 1; HA requires Redis)
+  --audit-storage-class SC  Durable local/block StorageClass (uses cluster default if omitted)
+  --replicas COUNT          Adapter replicas (v0.5 required audit supports only 1)
   --redis-secret NAME       Secret with redis-url and state-encryption-key
   --context NAME            kubectl context
   --disable-network-policy  Disable the chart's default same-namespace policy
@@ -106,6 +107,7 @@ install_adapter() {
   local secret_name="cube-adapter-auth"
   local cube_api_secret=""
   local cube_api_key_key="cube-api-key"
+  local audit_storage_class=""
   local replicas="1"
   local redis_secret=""
   local context=""
@@ -125,6 +127,7 @@ install_adapter() {
       --secret) secret_name="${2:?}"; shift 2 ;;
       --cube-api-secret) cube_api_secret="${2:?}"; shift 2 ;;
       --cube-api-key-key) cube_api_key_key="${2:?}"; shift 2 ;;
+      --audit-storage-class) audit_storage_class="${2:?}"; shift 2 ;;
       --replicas) replicas="${2:?}"; shift 2 ;;
       --redis-secret) redis_secret="${2:?}"; shift 2 ;;
       --context) context="${2:?}"; shift 2 ;;
@@ -140,8 +143,8 @@ install_adapter() {
   [[ "$cube_proxy_port" =~ ^[0-9]+$ ]] || die "--cube-proxy-port must be numeric"
   [[ "$cube_api_port" =~ ^[0-9]+$ ]] || die "--cube-api-port must be numeric"
   [[ "$replicas" =~ ^[1-9][0-9]*$ ]] || die "--replicas must be a positive integer"
-  if (( replicas > 1 )) && [[ -z "$redis_secret" ]]; then
-    die "--replicas greater than 1 requires --redis-secret"
+  if (( replicas > 1 )); then
+    die "v0.5 required audit supports one Adapter replica; use Helm with audit.mode=best_effort only if record loss is acceptable"
   fi
   [[ "$image" == *:* ]] || die "--image must include an explicit tag"
 
@@ -214,6 +217,9 @@ install_adapter() {
   )
   if [[ -n "$receipt_hmac_key" ]]; then
     helm_values+=(--set-string auth.receiptHmacKey="$receipt_hmac_key")
+  fi
+  if [[ -n "$audit_storage_class" ]]; then
+    helm_values+=(--set-string audit.persistence.storageClass="$audit_storage_class")
   fi
   if [[ -n "$cube_api_secret" ]]; then
     helm_values+=(

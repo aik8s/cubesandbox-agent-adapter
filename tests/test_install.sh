@@ -75,12 +75,14 @@ export PATH="$TEST_DIR/bin:$PATH"
   --cube-api-port 443 \
   --cube-proxy-host cube-proxy.example.test \
   --cube-proxy-port 8443 \
+  --audit-storage-class test-block \
   --template test-template
 
 grep -F 'helm upgrade --install cube-agent-adapter' "$TEST_CALLS" >/dev/null
 grep -F -- '--set networkPolicy.cubeApiPort=443' "$TEST_CALLS" >/dev/null
 grep -F -- '--set networkPolicy.cubeProxyPort=8443' "$TEST_CALLS" >/dev/null
 grep -F -- '--set-string cube.templateId=test-template' "$TEST_CALLS" >/dev/null
+grep -F -- '--set-string audit.persistence.storageClass=test-block' "$TEST_CALLS" >/dev/null
 
 export TEST_KUBE_SECRET=1
 "$ROOT_DIR/scripts/install.sh" openclaw \

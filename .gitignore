@@ -4,5 +4,6 @@
 __pycache__/
 *.py[cod]
 cube-adapter-audit.jsonl
+*.jsonl.sqlite3*
 dist/
 coverage/

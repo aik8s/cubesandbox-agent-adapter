@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/aik8s/cubesandbox-agent-adapter
-  tag: v0.4.0
+  tag: v0.5.0
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
@@ -82,12 +82,17 @@ state:
   lockTtlSeconds: 180
 
 audit:
+  # v0.5.0 defaults to fail-closed audit. Use one writer and durable local/block
+  # storage; best_effort is an explicit compatibility downgrade.
+  mode: required
   sinks: [file]
   httpUrl: ""
   httpTokenSecret: ""
   httpTokenKey: token
   persistence:
-    enabled: false
+    enabled: true
+    # Preserve authoritative audit data when the Helm release is uninstalled.
+    keep: true
     existingClaim: ""
     storageClass: ""
     accessModes: [ReadWriteOnce]

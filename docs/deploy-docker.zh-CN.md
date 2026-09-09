@@ -1,9 +1,12 @@
 # Docker Compose 部署 Adapter
 
+> v0.5.0 默认启用故障闭锁的持久化强审计。请保留命名审计卷，并在生产使用前阅读
+> [强审计保证与恢复](audit-durability.zh-CN.md)。
+
 [English](deploy-docker.md) | [返回 README](../README.zh-CN.md)
 
 适合已有 CubeSandbox、希望在电脑或单台服务器上接入 Agent 的用户。本指南使用
-`ghcr.io/aik8s/cubesandbox-agent-adapter:v0.4.0` 发布镜像，支持 Linux amd64/arm64，
+`ghcr.io/aik8s/cubesandbox-agent-adapter:v0.5.0` 发布镜像，支持 Linux amd64/arm64，
 也可以通过 macOS 上的 Docker Desktop 运行 Linux 容器。
 
 ## 1. 先准备后端和工具
@@ -40,7 +43,7 @@ CubeSandbox 计算节点上。
 在计划运行 Adapter 的机器上执行。后续 Compose 命令都在仓库根目录运行：
 
 ```bash
-git clone --branch v0.4.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
+git clone --branch v0.5.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
 cd cubesandbox-agent-adapter
 ```
 
@@ -97,7 +100,8 @@ curl -fsS http://127.0.0.1:18080/healthz
 curl -fsS http://127.0.0.1:18080/readyz
 ```
 
-版本应为 `0.4.0`。`/healthz` 检查进程存活，`/readyz` 检查后端依赖和模板；等到
+版本应为 `0.5.0`，健康信息还应包含 `audit_mode: required` 与 `audit_ready: true`。
+`/healthz` 检查进程存活，`/readyz` 检查后端依赖和模板；等到
 Compose 显示 `healthy` 且 `/readyz` 成功后再继续。启动失败时查看：
 
 ```bash
@@ -202,6 +206,10 @@ profile 名称，单机 Redis 加单个 Adapter 不构成跨主机高可用。
 `compose.yaml` 的固定镜像版本，执行 `pull adapter` 与 `up -d --no-build adapter`，
 重新检查版本、就绪状态和 E2E。不要在升级时重新生成密钥；回退旧镜像前检查状态兼容性。
 
+从 v0.4.0 升级时，新版会在原 JSONL 副本旁创建 SQLite 权威库；旧 JSONL 仍保留，
+但不会被追溯认定为强审计证据。请保留完整审计卷。存在未决操作时 readiness 返回 503，
+需按[强审计指南](audit-durability.zh-CN.md)离线核对。
+
 ```bash
 docker compose stop adapter
 # 恢复运行
@@ -215,7 +223,7 @@ docker compose down
 
 ## 9. 下一步：可信任务与常见问题
 
-v0.4.0 的训练、清洗、独立审批需要另外配置任务模板、Profile 和分角色身份。
+训练、清洗、独立审批需要另外配置任务模板、Profile 和分角色身份。
 不要只取消 `.env` 的 TaskTemplate 注释：默认 `config/profiles.yaml` 不包含示例所需的
 `trusted-training` / `trusted-data-cleaning` Profile。还需准备对应 READY 沙箱模板，
 将任务脚本放在 **沙箱模板内**，并只读挂载 Principal 配置到 Adapter；容器 UID 65532

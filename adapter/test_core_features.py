@@ -13,7 +13,7 @@ from adapter.config import AdapterConfig, AuthContext
 from adapter.core import AdapterError, CubeAdapter
 from adapter.mcp_server import AdapterHttpClient
 from adapter.state import MemoryStateStore, RecordCipher
-from adapter.test_support import FakeSandbox, FakeVolume, fake_template
+from adapter.test_support import FakeSandbox, FakeVolume, fake_template, reconcile_test_audit
 
 
 class DurableMemoryState(MemoryStateStore):
@@ -237,6 +237,11 @@ profiles:
         self.assertEqual(adapter.state.get_lease(lease).state, "released")
         self.assertIsNotNone(adapter.state.get_checkpoint(checkpoint["checkpoint_ref"]))
 
+        # Unknown external outcomes require inspection before retry in strict mode.
+        with self.assertRaises(AdapterError) as blocked:
+            adapter.release(lease, {"action": "kill"})
+        self.assertEqual(blocked.exception.code, 'audit_unavailable')
+        reconcile_test_audit(adapter)
         adapter.release(lease, {"action": "kill"})
         self.assertEqual(attempts, [("snapshot-cleanup", True), ("snapshot-cleanup", True)])
         self.assertIsNone(adapter.state.get_checkpoint(checkpoint["checkpoint_ref"]))

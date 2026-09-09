@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -7,6 +7,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const output = path.join(root, 'dist/site');
 const version = (await readFile(path.join(root, 'VERSION'), 'utf8')).trim();
 if (!/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(version)) throw new Error('Invalid VERSION');
+await rm(output, { recursive: true, force: true });
 await mkdir(path.join(output, 'assets'), { recursive: true });
 const cacheVersions = new Map();
 for (const file of ['styles.css', 'trust.css', 'app.js']) {
@@ -26,5 +27,7 @@ for (const file of ['01-openclaw-trusted-task.jpg', '02-dsh-trusted-task.jpg', '
 for (const file of ['02-plan-and-approval.jpg', '03-execution-output-cleanup.jpg', '04-signed-receipt.jpg', '05-failure-handling.jpg']) {
   await copyFile(path.join(root, 'docs/assets/trusted-execution-acceptance', file), path.join(output, 'assets', file));
 }
-await copyFile(path.join(root, 'docs/assets/readme/adapter-audit.jpg'), path.join(output, 'assets/adapter-audit.jpg'));
+for (const file of ['02-persistence-restart.png', '03-fail-closed-recovery.png']) {
+  await copyFile(path.join(root, 'docs/assets/audit-durability-acceptance', file), path.join(output, 'assets', file));
+}
 console.log(`Built public site for v${version} at ${output}`);

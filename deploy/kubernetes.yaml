@@ -33,6 +33,8 @@ metadata:
   namespace: agent-runtime
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: cube-adapter
@@ -50,7 +52,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: adapter
-          image: ghcr.io/aik8s/cubesandbox-agent-adapter:v0.4.0
+          image: ghcr.io/aik8s/cubesandbox-agent-adapter:v0.5.0
           imagePullPolicy: IfNotPresent
           env:
             - name: CUBE_ADAPTER_BIND
@@ -59,6 +61,8 @@ spec:
               value: "18080"
             - name: CUBE_ADAPTER_AUDIT_LOG
               value: /var/log/cube-adapter/audit.jsonl
+            - name: CUBE_ADAPTER_AUDIT_MODE
+              value: required
             - name: CUBE_ADAPTER_PROFILES_FILE
               value: /etc/cube-adapter/profiles.yaml
             - name: CUBE_ADAPTER_TOKEN
@@ -122,12 +126,24 @@ spec:
               readOnly: true
       volumes:
         - name: audit
-          emptyDir: {}
+          persistentVolumeClaim:
+            claimName: cube-adapter-audit
         - name: tmp
           emptyDir: {}
         - name: profiles
           configMap:
             name: cube-adapter-profiles
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: cube-adapter-audit
+  namespace: agent-runtime
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
 ---
 apiVersion: v1
 kind: Service

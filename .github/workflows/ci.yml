@@ -76,6 +76,7 @@ jobs:
         run: >-
           helm template ha charts/cubesandbox-agent-adapter
           --set replicaCount=2
+          --set audit.mode=best_effort
           --set state.enabled=true
           --set-string state.redisUrl=redis://redis:6379/0
           >/dev/null
@@ -84,6 +85,12 @@ jobs:
           ! helm template unsafe charts/cubesandbox-agent-adapter
           --set replicaCount=2
           >/dev/null 2>&1
+      - name: Reject unsafe strict audit storage and replicas
+        run: |
+          ! helm template unsafe charts/cubesandbox-agent-adapter --set audit.persistence.enabled=false >/dev/null 2>&1
+          ! helm template unsafe charts/cubesandbox-agent-adapter --set replicaCount=2 --set state.enabled=true >/dev/null 2>&1
+          ! helm template unsafe charts/cubesandbox-agent-adapter --set image.tag=v0.4.0 >/dev/null 2>&1
+          helm template strict charts/cubesandbox-agent-adapter >/dev/null
 
   container:
     runs-on: ubuntu-latest

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: CubeSandbox Agent Adapter API
-  version: 0.4.0
+  version: 0.5.0
   description: >-
     Authenticated, tenant-aware execution broker for CubeSandbox microVMs.
     Supports action-scoped identities and approved, schema-validated trusted

@@ -1,5 +1,8 @@
 # 本地 Code Agent 到生产资源的受控可信执行
 
+> 本文历史截图验证可信任务行为，不验证 v0.5.0 的审计故障处理。强审计保证、
+> 故障测试与恢复见[持久化保证与恢复](audit-durability.zh-CN.md)。
+
 首次安装先完成 [Docker Compose 部署](deploy-docker.zh-CN.md)或
 [Kubernetes 安装](../README.zh-CN.md#一键部署-kubernetes-adapter)，验证基础沙箱执行后，
 再按本文配置可信任务模板与审批身份。

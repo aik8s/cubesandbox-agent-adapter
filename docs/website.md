@@ -9,13 +9,13 @@ dependencies. Client images reuse the redacted public evidence in this repositor
 
 The `#trust` section puts permissions, independent approval, output policy,
 cleanup, signed receipts and redacted audit ahead of client screenshots. Its
-visual plan reuses four full-size light-theme acceptance-report captures from
-`docs/assets/trusted-execution-acceptance/` (02–05), plus the historical
-`docs/assets/readme/adapter-audit.jpg`. Each image has a bilingual readable
-summary and an original-image link for mobile inspection. These are existing
-evidence assets, not new test results or a product/security-console mockup.
-The historical audit demo is explicitly distinguished from a production audit
-service; HMAC verification is not hardware attestation or non-repudiation.
+visual plan reuses four full-size light-theme trusted-task report captures from
+`docs/assets/trusted-execution-acceptance/` (02–05), plus two v0.5.0 durable-audit
+acceptance captures from `docs/assets/audit-durability-acceptance/`. Each image
+has a bilingual summary and an original-image link for mobile inspection. The
+v0.5.0 images are deterministic reports from recorded real Kubernetes data,
+not a product/security-console mockup. HMAC verification is not hardware
+attestation or non-repudiation.
 
 ## Preview and publish
 
@@ -33,7 +33,7 @@ scripts from an earlier deployment in the browser cache.
 `.github/workflows/pages.yml` builds on relevant pull requests and deploys on
 matching pushes to `main` (or manual dispatch). In repository Settings → Pages,
 the source must be **GitHub Actions**. Only `dist/site` is uploaded: the five
-static site files and nine explicitly allowlisted public screenshots. Use a
+static site files and ten explicitly allowlisted public screenshots. Use a
 clean build directory when previewing after changing the allowlist; CI starts
 from a fresh checkout. Never add `.env`, runtime logs or internal connection
 details to the site or its build output.

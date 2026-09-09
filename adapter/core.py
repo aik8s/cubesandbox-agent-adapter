@@ -21,6 +21,7 @@ from typing import Any, Callable, Dict, Iterator, Optional, Tuple
 from cubesandbox import PtySize, Sandbox, Template, Volume, VolumeMount
 
 from .audit import AuditManager
+from .audited import audited_adapter
 from .auth import Authenticator, AuthFailure
 from .config import AdapterConfig, AuthContext, ProfileConfig
 from .metrics import AdapterMetrics
@@ -35,7 +36,7 @@ from .state import (
 )
 from .task_config import TaskOutputConfig, TaskTemplateConfig
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 MAX_BODY_BYTES = 16 * 1024 * 1024
 MAX_COMMAND_BYTES = 16 * 1024
 MAX_FILE_BYTES = 256 * 1024
@@ -126,6 +127,7 @@ def _default_auth() -> AuthContext:
     )
 
 
+@audited_adapter
 class CubeAdapter:
     def __init__(
         self,
@@ -1357,6 +1359,11 @@ class CubeAdapter:
                 plan.denial_reason_sha256 = (
                     hashlib.sha256(reason.encode("utf-8")).hexdigest() if reason else None
                 )
+            if self.audit.journal is not None:
+                self._audit_task(auth, 'task_approval_decision', request_id, 'authorized', template,
+                                 plan_ref=plan.plan_ref, decision=decision,
+                                 parameters_sha256=plan.parameters_sha256,
+                                 command_sha256=plan.command_sha256)
             self.state.put_task_plan(plan)
         self._audit_task(
             auth,
@@ -1414,6 +1421,12 @@ class CubeAdapter:
                 template_digest=plan.template_digest,
                 profile=template.profile,
             )
+            if self.audit.journal is not None:
+                self._audit_task(auth, 'task_execution_authorized', request_id, 'authorized', template,
+                                 plan_ref=plan.plan_ref, task_ref=task.task_ref,
+                                 parameters_sha256=plan.parameters_sha256,
+                                 command_sha256=plan.command_sha256,
+                                 approver_hash=plan.approved_by_hash)
             plan.submitted_task_ref = task.task_ref
             plan.state = "submitted"
             self.state.put_task(task)
@@ -1546,9 +1559,13 @@ class CubeAdapter:
             "status": "ok",
             "version": VERSION,
             "state_backend": "durable" if self.state.durable else "memory",
+            "audit_mode": self.config.audit_mode,
+            "audit_ready": self.audit.journal is None or not self.audit.journal.failed,
         }
 
     def readiness(self, *, force: bool = False) -> Tuple[int, Dict[str, Any]]:
+        if self.audit.journal is not None and self.audit.journal.failed:
+            return 503, {'status': 'not_ready', 'checks': {'audit': 'reconciliation_required'}}
         with self._readiness_lock:
             now = time.monotonic()
             if (
@@ -1598,6 +1615,7 @@ class CubeAdapter:
 
     def metrics_payload(self) -> bytes:
         self._refresh_gauges()
+        self.audit.update_metrics()
         return self.metrics.render()
 
     def audit_html(self) -> str:
@@ -1639,7 +1657,7 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
         with self._handles_lock:
             handles = list(self._handles.items())
             self._handles.clear()
-        if self.state.durable:
+        if self.state.durable or self.audit.journal is not None:
             for _lease_ref, sandbox in handles:
                 try:
                     sandbox.close()
@@ -2307,6 +2325,8 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
                     latest = self.state.get_lease(record.lease_ref)
                     if latest is None or now - latest.last_used_at < profile.lease_idle_ttl_seconds:
                         continue
+                    if self.audit.journal is not None:
+                        self._audit(latest, 'gc_release_intent', uuid.uuid4().hex[:16], 'pending', started)
                     sandbox = self._sandbox(latest)
                     sandbox.kill()
                     latest.state = "released"

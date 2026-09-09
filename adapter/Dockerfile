@@ -9,7 +9,8 @@ RUN pip install --disable-pip-version-check --no-cache-dir -r adapter/requiremen
 COPY . ./adapter/
 
 RUN groupadd --system --gid 65532 adapter \
-    && useradd --system --uid 65532 --gid adapter --home-dir /nonexistent adapter
+    && useradd --system --uid 65532 --gid adapter --home-dir /nonexistent adapter \
+    && install -d -o 65532 -g 65532 -m 0750 /var/log/cube-adapter
 
 USER 65532:65532
 EXPOSE 18080

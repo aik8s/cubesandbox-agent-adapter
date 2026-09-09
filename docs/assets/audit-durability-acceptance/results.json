@@ -1,0 +1,58 @@
+{
+  "title": "CubeSandbox Agent Adapter v0.5.0 acceptance",
+  "generated_at": "2026-09-09T10:45:49+08:00",
+  "environment": "Kubernetes acceptance cluster · real CubeSandbox MicroVMs",
+  "release_candidate": "v0.5.0 RC · linux/amd64",
+  "functional": {
+    "passed": 23,
+    "failed": 0,
+    "real_microvm_checks": 19,
+    "clients": ["OpenClaw", "DSH", "Codex MCP", "Hermes Agent"],
+    "tools_per_client": 19,
+    "trusted_task_tools_per_client": 6,
+    "cleanup": "verified",
+    "receipt": "HS256"
+  },
+  "authority": {
+    "mode": "required",
+    "database_mode": "0600",
+    "runtime_uid": 65532,
+    "pvc": "Bound · 1 GiB · RWO local block · retained on uninstall",
+    "deployment_strategy": "Recreate",
+    "events_before_restart": 498,
+    "events_after_restart": 498,
+    "incomplete_after_restart": 0,
+    "exclusive_writer_lock": "PASS"
+  },
+  "fail_closed": {
+    "method": "Offline synthetic crash-window intent; no backend call performed",
+    "events_with_pending_intent": 499,
+    "incomplete_before_reconcile": 1,
+    "audit_ready_before_reconcile": false,
+    "guarded_api_status": 503,
+    "required_metric": 1,
+    "blocked_metric": 1,
+    "incomplete_metric": 1,
+    "recovery_event": "manually_reconciled",
+    "events_after_reconcile": 500,
+    "incomplete_after_reconcile": 0,
+    "audit_ready_after_reconcile": true,
+    "readiness_after_reconcile": "ready"
+  },
+  "privacy": {
+    "events_scanned": 506,
+    "secret_values_found": false,
+    "raw_task_markers_found": false,
+    "bearer_literal_found": false,
+    "pending_deliveries_at_baseline": 0
+  },
+  "local_quality": {
+    "python_tests": "48/48",
+    "redis_integration_skipped": 0,
+    "ruff": "PASS",
+    "mypy": "PASS",
+    "helm_safety": "PASS",
+    "client_plugin_tests": "PASS"
+  },
+  "boundary": "Real Pod/PVC restart and real CubeSandbox task/client tests. The fail-closed incident used a synthetic pending intent and did not call the backend. This is not a power-loss, full-disk, PVC-loss or security certification."
+}

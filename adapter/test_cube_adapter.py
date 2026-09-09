@@ -75,7 +75,7 @@ class AdapterHttpTest(unittest.TestCase):
         self.post(f"/v1/leases/{lease}/release", {"action": "kill"})
         self.assertTrue(FakeSandbox.created[0].killed)
 
-        audit = self.audit_path.read_text()
+        audit = json.dumps(self.adapter.audit.recent())
         self.assertNotIn("private-command", audit)
         self.assertNotIn("secret-session", audit)
         self.assertNotIn("test-token", audit)
@@ -121,7 +121,7 @@ class AdapterHttpTest(unittest.TestCase):
         self.post(f"/v1/leases/{hermes['lease_ref']}/release", {"action": "kill"})
         self.post(f"/v1/leases/{openclaw['lease_ref']}/release", {"action": "kill"})
 
-        rows = [json.loads(line) for line in self.audit_path.read_text().splitlines()]
+        rows = self.adapter.audit.recent()
         self.assertIn("hermes", {row["runtime"] for row in rows})
 
 

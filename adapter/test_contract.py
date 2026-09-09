@@ -104,7 +104,7 @@ class OpenApiContractTest(unittest.TestCase):
             str(hermes["version"]),
             str(project_version.group(1)),
         }
-        self.assertEqual(versions, {"0.4.0"})
+        self.assertEqual(versions, {"0.5.0"})
 
 
 if __name__ == "__main__":

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Protocol
 from urllib.request import Request, urlopen
 
+from .audit_journal import AuditJournal
 from .config import AdapterConfig
 from .metrics import AdapterMetrics
 
@@ -86,20 +87,25 @@ class AuditManager:
         metrics: AdapterMetrics,
         recent_limit: int = 200,
         queue_size: int = 4096,
+        journal: Optional[AuditJournal] = None,
     ) -> None:
         self._sinks = tuple(sinks)
+        self.journal = journal
+        self._delivery_stop = threading.Event()
         self._metrics = metrics
         self._recent: deque[Dict[str, Any]] = deque(maxlen=recent_limit)
         self._recent_lock = threading.Lock()
-        self._queue: queue.Queue[Optional[Dict[str, Any]]] = queue.Queue(
-            maxsize=queue_size
-        )
+        self._queue: queue.Queue[Optional[Dict[str, Any]]] = queue.Queue(maxsize=queue_size)
         self._closed = False
-        self._thread = threading.Thread(target=self._worker, daemon=True)
+        self._thread = threading.Thread(
+            target=self._durable_worker if journal else self._worker, daemon=True
+        )
         self._thread.start()
 
     @classmethod
     def from_config(cls, config: AdapterConfig, metrics: AdapterMetrics) -> "AuditManager":
+        if config.audit_mode not in {"required", "best_effort"}:
+            raise RuntimeError("unsupported audit mode")
         sinks: list[AuditSink] = []
         if "file" in config.audit_sinks:
             sinks.append(FileAuditSink(config.audit_log))
@@ -108,12 +114,22 @@ class AuditManager:
         if "http" in config.audit_sinks:
             assert config.audit_http_url is not None
             sinks.append(HttpAuditSink(config.audit_http_url, config.audit_http_token))
-        manager = cls(sinks, metrics=metrics)
-        if "file" in config.audit_sinks:
+        journal = (
+            AuditJournal(config.audit_log + ".sqlite3", config.audit_sinks)
+            if config.audit_mode == "required"
+            else None
+        )
+        manager = cls(sinks, metrics=metrics, journal=journal)
+        if journal is None and "file" in config.audit_sinks:
             manager.load_recent(config.audit_log)
         return manager
 
     def emit(self, event: Dict[str, Any]) -> None:
+        if self.journal is not None:
+            from .audited import _parent
+
+            self.journal.append({**event, "operation_id": _parent.get()})
+            return
         snapshot = dict(event)
         with self._recent_lock:
             self._recent.append(snapshot)
@@ -123,8 +139,22 @@ class AuditManager:
             self._metrics.audit_dropped.inc()
 
     def recent(self) -> list[Dict[str, Any]]:
+        if self.journal is not None:
+            return self.journal.recent()
         with self._recent_lock:
             return list(self._recent)
+
+    def update_metrics(self) -> None:
+        self._metrics.audit_required.set(1 if self.journal else 0)
+        self._metrics.audit_blocked.set(1 if self.journal and self.journal.failed else 0)
+        pending, incomplete = 0, 0
+        if self.journal:
+            try:
+                pending, incomplete = self.journal.counts()
+            except Exception:
+                pending, incomplete = -1, -1
+        self._metrics.audit_pending.set(pending)
+        self._metrics.audit_incomplete.set(incomplete)
 
     def load_recent(self, path: str) -> None:
         try:
@@ -142,6 +172,26 @@ class AuditManager:
                     continue
                 if isinstance(value, dict):
                     self._recent.append(value)
+
+    def _durable_worker(self) -> None:
+        assert self.journal is not None
+        # Each sink has an independent cursor. Failed deliveries remain on disk.
+        while not self._delivery_stop.is_set():
+            progressed = False
+            for sink in self._sinks:
+                name = {FileAuditSink: "file", StdoutAuditSink: "stdout", HttpAuditSink: "http"}[
+                    type(sink)
+                ]
+                try:
+                    item = self.journal.next_delivery(name)
+                    if item is not None:
+                        seq, event = item
+                        sink.emit(event)
+                        self.journal.acknowledge(seq, name)
+                        progressed = True
+                except Exception:
+                    self._metrics.audit_failures.labels(type(sink).__name__).inc()
+            self._delivery_stop.wait(0.01 if progressed else 0.5)
 
     def _worker(self) -> None:
         while True:
@@ -166,6 +216,16 @@ class AuditManager:
         if self._closed:
             return
         self._closed = True
+        if self.journal is not None:
+            self._delivery_stop.set()
+            self._thread.join(timeout=5)
+            # Do not close a connection still in use by an external sink worker.
+            if self._thread.is_alive():
+                raise RuntimeError("audit delivery worker did not stop")
+            for sink in self._sinks:
+                sink.close()
+            self.journal.close()
+            return
         try:
             self._queue.put(None, timeout=2)
         except queue.Full:

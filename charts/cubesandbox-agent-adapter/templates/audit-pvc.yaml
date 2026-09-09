@@ -3,6 +3,10 @@ apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: {{ include "cubesandbox-agent-adapter.fullname" . }}-audit
+  {{- if .Values.audit.persistence.keep }}
+  annotations:
+    helm.sh/resource-policy: keep
+  {{- end }}
   labels:
     {{- include "cubesandbox-agent-adapter.labels" . | nindent 4 }}
 spec:

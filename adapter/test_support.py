@@ -209,3 +209,18 @@ class FakeVolume:
 
 def fake_template(_template):
     return {"status": "ready"}
+
+
+def reconcile_test_audit(adapter):
+    """Simulate offline operator reconciliation after inspecting fake resources."""
+    from .audit import AuditManager
+    from .audit_journal import AuditJournal
+
+    adapter.audit.close()
+    journal = AuditJournal(adapter.config.audit_log + '.sqlite3', adapter.config.audit_sinks)
+    try:
+        for event in journal.pending_operations():
+            journal.reconcile(event['operation_id'], 'test-operator', 'inspected-fake-resource')
+    finally:
+        journal.close()
+    adapter.audit = AuditManager.from_config(adapter.config, adapter.metrics)

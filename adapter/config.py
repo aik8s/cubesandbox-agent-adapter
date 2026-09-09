@@ -409,6 +409,7 @@ class AdapterConfig:
     sandbox_timeout_seconds: int = 300
     max_command_seconds: int = 120
     audit_ui: bool = False
+    audit_mode: str = 'required'
     profiles_file: Optional[str] = None
     task_templates_file: Optional[str] = None
     receipt_hmac_key: Optional[str] = field(default=None, repr=False)
@@ -495,6 +496,9 @@ class AdapterConfig:
                 "trusted mTLS subject authentication requires a verified client CA"
             )
 
+        audit_mode = os.environ.get('CUBE_ADAPTER_AUDIT_MODE', 'required')
+        if audit_mode not in {'required', 'best_effort'}:
+            raise RuntimeError('CUBE_ADAPTER_AUDIT_MODE must be required or best_effort')
         sinks = _string_tuple(
             os.environ.get("CUBE_ADAPTER_AUDIT_SINKS", "file"),
             field_name="CUBE_ADAPTER_AUDIT_SINKS",
@@ -532,6 +536,7 @@ class AdapterConfig:
                 os.environ.get("CUBE_ADAPTER_MAX_COMMAND_SECONDS", 120),
             ),
             audit_ui=os.environ.get("CUBE_ADAPTER_AUDIT_UI", "0") == "1",
+            audit_mode=audit_mode,
             profiles_file=os.environ.get("CUBE_ADAPTER_PROFILES_FILE") or None,
             task_templates_file=os.environ.get("CUBE_ADAPTER_TASK_TEMPLATES_FILE") or None,
             receipt_hmac_key=receipt_hmac_key,

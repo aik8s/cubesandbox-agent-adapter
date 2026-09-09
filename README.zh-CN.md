@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[项目官网](https://aik8s.github.io/cubesandbox-agent-adapter/) · [官网发布说明](docs/website.md)
+[项目官网](https://aik8s.github.io/cubesandbox-agent-adapter/) · [v0.5.0 更新日志](CHANGELOG.md) · [官网发布说明](docs/website.md)
 
 这是一个社区集成项目，用于把 OpenClaw、DeepSeek Harness（DSH）、Hermes
 Agent 以及 Codex 等 MCP Host 的工具调用，经受控策略路由到
@@ -13,15 +13,15 @@ OpenClaw Tool Plugin ──────────┐
 DSH Cordis Plugin ─────────────┤
 Hermes Tool Plugin ────────────┼─ 认证 HTTP ─→ Adapter ─→ Cube SDK ─→ MicroVM
 Codex / MCP Host ─→ MCP stdio ─┘                          │
-                                                        └─ 脱敏 JSONL 审计
+                                                        └─ 持久化脱敏审计
 ```
 
 Adapter 是唯一持有 Cube 连接配置、完整 Sandbox ID 和流量令牌的组件。Runtime
 插件只获得不透明租约；返回给模型的是短 Sandbox 引用，不包含底层凭据。
 
-> **项目状态：** `v0.4.0` 是面向生产形态的参考实现，已经支持持久化加密租约、
-> 多租户策略和带审批的可信任务流程，但上线前仍需完成部署侧加固，并在每个目标
-> CubeSandbox 环境重新验收。
+> **项目状态：** `v0.5.0` 是面向生产形态的参考实现，在持久化加密租约、多租户
+> 策略和带审批可信任务的基础上新增故障闭锁强审计。上线前仍需完成部署侧加固，
+> 并在每个目标 CubeSandbox 环境重新验收。
 
 ## 新用户从哪里开始
 
@@ -224,11 +224,11 @@ Agent 工具结果中的 sandbox_ref
 - Kubernetes、OpenClaw、DSH 和 Hermes Agent 一键安装脚本；
 - 本地开发用 Docker Compose；
 - Helm Chart、纯 Kubernetes Manifest、测试和镜像发布流水线；
-- Redis 加密恢复和多副本分布式锁；
+- Redis 加密恢复和分布式锁（多副本仅可在显式降级为 `best_effort` 审计时使用）；
 - 分租户 Bearer、OIDC、TLS/mTLS；
 - Prometheus 指标、依赖感知 Readiness 和可插拔审计 Sink；
 - 基于官方 SDK 的 MCP stdio 门面；
-- 追加写入、默认脱敏的 JSONL 审计事件；
+- 故障闭锁持久化审计、默认脱敏事件与可重试外送；
 - 服务端强制的训练/数据清洗 TaskTemplate：JSON Schema、Action Scope、独立审批、
   输出策略、清理确认和签名 Execution Receipt。
 
@@ -256,7 +256,7 @@ Hermes 路径已在 macOS Apple Silicon 的 Hermes Agent 0.20.6 与 CubeSandbox
 克隆仓库：
 
 ```bash
-git clone --branch v0.4.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
+git clone --branch v0.5.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
 cd cubesandbox-agent-adapter
 ```
 
@@ -287,13 +287,17 @@ cd cubesandbox-agent-adapter
   --namespace my-agent-runtime \
   --release cube-adapter \
   --secret existing-adapter-secret \
-  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.4.0 \
+  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.5.0 \
   --cube-api-url https://cube-api.example.internal \
   --cube-api-port 443 \
   --cube-proxy-host cube-proxy.example.internal \
   --cube-proxy-port 443 \
+  --audit-storage-class <持久化本地盘或块存储类> \
   --template agent-code
 ```
+
+v0.5.0 强审计要求集群存在默认的可靠本地盘/块存储 StorageClass，或使用上述
+`--audit-storage-class` 显式指定；不要选择 NFS/共享文件系统。
 
 默认 NetworkPolicy 只接受同一 Namespace 中带以下标签的客户端 Pod：
 
@@ -397,7 +401,7 @@ hermes -t cube-adapter
 
 ## Docker 部署与本地开发
 
-首次部署请使用 [Docker Compose 部署指南](docs/deploy-docker.zh-CN.md)：它从 v0.4.0
+首次部署请使用 [Docker Compose 部署指南](docs/deploy-docker.zh-CN.md)：它从 v0.5.0
 发布镜像启动，包含密钥生成、网络地址选择、健康检查、真实沙箱验收、客户端接入和升级。
 Docker 只承载 Adapter，仍需连接已部署的 CubeSandbox 后端。
 
@@ -482,6 +486,12 @@ MCP 还提供 `cube_task_plan`、`cube_task_submit`、`cube_task_status`、
 
 ## 审计
 
+v0.5.0 默认启用 `required` 强审计，以持久化 SQLite 日志为权威记录，外送队列可重试，
+写入失败阻断执行。启用前阅读[持久化保证、部署与恢复说明](docs/audit-durability.zh-CN.md)：
+仅支持单实例与可靠本地盘/持久化块存储；Helm 默认创建 PVC，`best_effort` 是可能丢记录
+的显式兼容降级项。
+崩溃后未决操作需人工核对，不自动重跑；JSONL/HTTP/stdout 只是可重复、可延迟的副本。
+
 审计行包含 Runtime、带密钥的会话摘要、策略、动作、Request ID、短 Sandbox
 引用、耗时和结果，不包含：
 
@@ -493,6 +503,12 @@ MCP 还提供 `cube_task_plan`、`cube_task_submit`、`cube_task_status`、
 
 可选 `/audit` HTML 页面默认关闭，只用于受保护测试网络的演示。真实部署应把
 JSONL 事件发送到持久、访问受控的审计流水线。
+
+v0.5.0 Kubernetes 验收覆盖四客户端真实 MicroVM 任务、Pod/PVC 重启保留、独占锁、
+503 安全屏障、离线核对恢复以及 Pod 内密钥泄露扫描。完整记录与 Light 模式证据见
+[强审计验收章节](docs/audit-durability.zh-CN.md#kubernetes-验收记录2026-09-09)。
+
+![v0.5.0 故障闭锁强审计验收](docs/assets/audit-durability-acceptance/03-fail-closed-recovery.png)
 
 ## 配置
 
@@ -566,6 +582,9 @@ git pull --ff-only
 helm uninstall cube-agent-adapter -n agent-runtime
 ```
 
+v0.5.0 Chart 默认在卸载时保留权威审计 PVC。请登记并备份该 PVC，只能按部署方批准的
+审计保留流程删除。
+
 删除 OpenClaw 包前先禁用集成：
 
 ```bash
@@ -583,8 +602,8 @@ hermes plugins disable cube-adapter-tools
 
 ## 安全边界与当前限制
 
-- 零依赖默认值仍是内存状态并限制单副本；`replicaCount > 1` 时必须启用 Redis，
-  租约记录会加密，操作使用可续期分布式锁；
+- 零依赖默认值仍是内存状态；v0.5.0 强审计仅支持单 Adapter 写入者。只有明确降级为
+  `best_effort` 时才可配合 Redis 扩展多副本；此时租约记录会加密，但审计可能丢失；
 - PTY、SSE 流式输出、异步取消、租户配额和单个独立审批者流程已经实现；多人会签、
   外部审批回调和通用限流器尚未实现；
 - CubeSandbox v0.7 暂不支持带 Volume/Host Mount 的快照，Profile 默认拒绝该组合；

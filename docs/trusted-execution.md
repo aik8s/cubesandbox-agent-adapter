@@ -113,6 +113,9 @@ complete threat model and deployment checklist.
 
 ## Live acceptance evidence
 
+These historical captures validate trusted-task behavior, not v0.5.0 audit fault
+handling. See the separate [durability guarantees, fault tests and recovery](audit-durability.md).
+
 The screenshots below come from real CubeSandbox MicroVM execution in an
 isolated acceptance namespace, not a UI mock. The suite passed 23/23 checks.
 All captures use the light theme and exclude tokens, addresses, full internal
