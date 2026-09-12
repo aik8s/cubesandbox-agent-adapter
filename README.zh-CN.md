@@ -215,6 +215,15 @@ Light 模式 TUI，直接显示工具次数、调用顺序和最终验收结果�
 Hermes 截图里的“6 tools”由 1 次 `tool_describe` 工具发现和 5 次可信任务调用组成。
 更完整的验收范围和后端证据见[可信执行文档](docs/trusted-execution.zh-CN.md)。
 
+### CubeSandbox v0.7.1 后端验收
+
+2026-09-12，将 Kubernetes 后端从 CubeSandbox v0.7.0 升级到 v0.7.1，并使用重建的
+v0.7.1 模板产物重新运行 Adapter 验收，最终 30/30 项通过。v0.7.1 专项覆盖挂载 S3
+Volume 的快照、rootfs 回滚、外部数据保持最新、克隆与重新挂载、引用中快照删除，
+以及全部临时资源清理：
+
+![CubeSandbox v0.7.1 挂载卷快照验收](docs/assets/trusted-execution-acceptance/07-cubesandbox-v071.jpg)
+
 截图没有暴露 Bearer Token、网关地址、完整 Sandbox ID 或私有集群标识；Hermes
 截图中的本地路径、完整 Plan/Task/Sandbox 标识和原始签名 Receipt 载荷已做可见遮挡。
 模型凭据只通过环境变量引用，没有写入仓库。
@@ -232,7 +241,8 @@ Agent 工具结果中的 sandbox_ref
 
 ## 项目包含什么
 
-- 使用 `cubesandbox==0.7.0` 的带认证 Python Adapter；
+- 使用固定版本 `cubesandbox==0.7.0` SDK 的带认证 Python Adapter；已完成对
+  CubeSandbox v0.7.1 服务端的上游兼容性审查；
 - 默认拒绝公网的声明式 Profile，并提供持久卷与检查点能力门控；
 - OpenClaw、DSH、Hermes 共用 19 个执行、文件、异步 Job、检查点和可信任务工具，
   并提供 Codex 等 Host 可使用的 MCP 门面；
@@ -638,7 +648,9 @@ hermes plugins disable cube-adapter-tools
   `best_effort` 时才可配合 Redis 扩展多副本；此时租约记录会加密，但审计可能丢失；
 - PTY、SSE 流式输出、异步取消、租户配额和单个独立审批者流程已经实现；多人会签、
   外部审批回调和通用限流器尚未实现；
-- CubeSandbox v0.7 暂不支持带 Volume/Host Mount 的快照，Profile 默认拒绝该组合；
+- CubeSandbox v0.7.1 已支持带 Volume Plugin 或 Host Mount 的 Checkpoint，但采用
+  外部引用语义：VM/rootfs 会回退，挂载数据保持最新状态且可能受原节点约束。因此
+  Profile 仍需在存储专项验收后显式启用 `allow_checkpoint_with_mounts`；
 - Profile 的 `network` 配置只归运维方所有，模型不能动态传入；
 - DSH 当前暴露 `cube_*` 工具，还不是透明的原生 `shell/fs/pty` Provider；
 - OpenClaw 当前没有稳定的通用第四种 Sandbox Backend，本项目使用公开的 Tool

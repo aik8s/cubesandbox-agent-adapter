@@ -146,9 +146,11 @@ Task 和 Receipt 在 Adapter 重启后仍可恢复。
 
 ## 真实环境验收截图
 
-下面的截图来自隔离验收命名空间中的真实 CubeSandbox MicroVM 执行，不是界面模拟。
-验收结果为 23/23 PASS；页面使用 light 模式，并排除了令牌、地址、完整内部标识、
-原始命令和任务数据。
+2026-09-12，在 Kubernetes 后端升级到 CubeSandbox v0.7.1 后，重新验收了 v0.5.0
+Adapter。最终 30/30 项通过：原有 23 项 Adapter 与四客户端检查，加上 7 项挂载卷
+Snapshot、Rollback、Clone 和资源清理检查。全部截图使用 Light 模式，并排除了令牌、
+地址、完整内部标识、原始命令和任务数据。脱敏机器可读记录见
+[`results.json`](assets/trusted-execution-acceptance/results.json)。
 
 总体结果、服务健康、模板目录与可信边界：
 
@@ -174,6 +176,11 @@ OpenClaw、DSH、Codex/MCP 与 Hermes 均完成真实 plan、submit、status、r
 链路，且 MicroVM 清理已验证：
 
 ![四类 Agent 客户端验收](assets/trusted-execution-acceptance/06-agent-clients.jpg)
+
+v0.7.1 后端完成了挂载 S3 Volume 的快照、rootfs 回滚、外部数据保持最新、恢复状态
+克隆和卷重新挂载，也验证了引用中快照删除，并清理了全部 6 个临时资源：
+
+![CubeSandbox v0.7.1 挂载卷快照验收](assets/trusted-execution-acceptance/07-cubesandbox-v071.jpg)
 
 ### 客户端自身界面实测证据
 

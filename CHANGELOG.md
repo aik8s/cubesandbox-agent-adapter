@@ -7,6 +7,19 @@
 - Claude Code client guidance, a redacted live-acceptance runner, and native
   light-mode evidence for both the trusted-task flow and the Codex-equivalent
   acquire/exec/status/release path against the v0.5.0 release image.
+- A real CubeSandbox v0.7.1 mounted-volume acceptance for snapshot, rollback,
+  clone, referenced-snapshot deletion and complete temporary-resource cleanup.
+- Refreshed light-mode evidence from the post-upgrade 30/30 Adapter/backend run.
+
+### Changed
+
+- Reviewed CubeSandbox v0.7.1 backend compatibility while retaining the latest
+  published `cubesandbox==0.7.0` Python SDK pin.
+- Updated the mounted-workspace checkpoint gate and documentation for v0.7.1
+  external-reference restore semantics; explicit operator opt-in remains the
+  safe default.
+- Redacted public Plan, Task and Sandbox evidence references with stable hashes
+  and added a public environment label to the acceptance renderer.
 
 ## v0.5.0 — 2026-09-09
 

@@ -14,7 +14,7 @@ import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -27,13 +27,30 @@ class Check:
     evidence: dict[str, Any] = field(default_factory=dict)
 
 
+def public_ref(kind: str, value: Any) -> str:
+    """Return a stable proof reference without publishing an internal identifier."""
+    if value in (None, ""):
+        return ""
+    digest = hashlib.sha256(str(value).encode("utf-8")).hexdigest()[:12]
+    return f"{kind}#{digest}"
+
+
 class Acceptance:
-    def __init__(self, base_url: str, agent: str, approver: str, dual: str, key: str):
+    def __init__(
+        self,
+        base_url: str,
+        agent: str,
+        approver: str,
+        dual: str,
+        key: str,
+        environment: str,
+    ):
         self.base_url = base_url.rstrip("/")
         self.agent = agent
         self.approver = approver
         self.dual = dual
         self.key = key
+        self.environment = environment
         self.checks: list[Check] = []
 
     def request(
@@ -233,7 +250,7 @@ class Acceptance:
             "approval-review",
             "Plan and approval",
             "Independent approver sees parameters bound to immutable hashes.",
-            plan_ref=plan["plan_ref"],
+            plan_ref=public_ref("plan", plan["plan_ref"]),
             template_sha256=str(plan["template_sha256"])[:16],
             parameters_sha256=str(plan["parameters_sha256"])[:16],
             command_sha256=str(plan["command_sha256"])[:16],
@@ -254,7 +271,7 @@ class Acceptance:
             "idempotent-submit",
             "Plan and approval",
             "Repeated submission returns the original task instead of executing twice.",
-            task_ref=submitted.get("task_ref"),
+            task_ref=public_ref("task", submitted.get("task_ref")),
         )
         task_ref = str(submitted["task_ref"])
         status, early_receipt = self.request(
@@ -276,7 +293,7 @@ class Acceptance:
             "task-started",
             "Execution",
             "Task was scheduled into a real CubeSandbox MicroVM.",
-            task_ref=task_ref,
+            task_ref=public_ref("task", task_ref),
             state=running.get("state"),
         )
         self.wait_terminal(task_ref)
@@ -292,7 +309,9 @@ class Acceptance:
             "output-policy",
             "Execution",
             "Allowlisted metrics are returned while model content remains digest-only.",
-            sandbox_ref=result.get("result", {}).get("sandbox_ref"),
+            sandbox_ref=public_ref(
+                "sandbox", result.get("result", {}).get("sandbox_ref")
+            ),
             metrics=outputs.get("metrics"),
             model_sha256=str(model_evidence.get("sha256", ""))[:16],
         )
@@ -339,7 +358,7 @@ class Acceptance:
             "receipt-get-post",
             "Signed receipt",
             "GET and POST receipt transports return the same signed evidence.",
-            task_ref=task_ref,
+            task_ref=public_ref("task", task_ref),
         )
 
         denied_plan = self.plan(
@@ -432,14 +451,14 @@ class Acceptance:
 
         return {
             "title": "CubeSandbox Trusted Execution Acceptance",
-            "generated_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
-            "environment": "sr1 · isolated acceptance namespace · real CubeSandbox",
+            "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+            "environment": self.environment,
             "result": "PASS",
             "passed": len(self.checks),
             "failed": 0,
             "checks": [check.__dict__ for check in self.checks],
             "receipt": {
-                "task_ref": task_ref,
+                "task_ref": public_ref("task", task_ref),
                 "state": payload.get("state"),
                 "cleanup": payload.get("cleanup"),
                 "algorithm": signature.get("alg"),
@@ -515,6 +534,7 @@ main{{padding:34px 0 64px}}section{{margin:0 0 44px;scroll-margin-top:12px}}.sec
 .evidence{{border-top:1px solid #edf0f5;padding-top:10px}}.datum{{display:flex;justify-content:space-between;gap:16px;margin:6px 0;font-size:12px}}.datum span{{color:var(--muted);text-transform:capitalize}}code{{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#243b72;overflow-wrap:anywhere;text-align:right}}
 .receipt{{background:#fff;color:var(--ink);border:1px solid var(--line);border-radius:18px;padding:24px;box-shadow:0 14px 32px #23345a12}}.receipt h2{{margin-bottom:14px}}table{{width:100%;border-collapse:collapse}}th,td{{border-top:1px solid #edf0f5;padding:9px 0;text-align:left}}th{{width:220px;color:var(--muted);font-size:12px;text-transform:capitalize}}.receipt code{{color:#243b72}}
 footer{{padding:24px 0 40px;color:var(--muted);font-size:12px;border-top:1px solid var(--line)}}
+.capture .top,.capture footer{{display:none}}.capture main{{padding:20px 0 40px}}.capture main>section{{display:none}}
 @media(max-width:760px){{.wrap{{width:min(100% - 28px,1180px)}}h1{{font-size:32px}}.grid{{grid-template-columns:1fr}}.datum{{display:block}}code{{display:block;text-align:left;margin-top:2px}}}}
 </style></head>
 <body><div class="top"><div class="wrap"><header><div class="brand">CubeSandbox · Trusted Execution</div>
@@ -524,6 +544,7 @@ footer{{padding:24px 0 40px;color:var(--muted);font-size:12px;border-top:1px sol
 <div class="badge"><strong>Light</strong><span>evidence theme</span></div></div></header><nav>{nav}</nav></div></div>
 <main class="wrap">{''.join(section_html)}<section id="receipt"><div class="receipt"><span class="eyebrow">OFFLINE VERIFIED</span><h2>Signed execution receipt</h2><table>{receipt_rows}</table></div></section></main>
 <footer><div class="wrap">Generated {html.escape(result['generated_at'])}. Real execution evidence; tokens, addresses, full internal identifiers, commands and task data are excluded.</div></footer>
+<script>const capture=new URLSearchParams(location.search).get("section");if(capture){{const target=document.getElementById(capture);if(target){{document.body.classList.add("capture");target.style.display="block";}}}}</script>
 </body></html>"""
 
 
@@ -531,6 +552,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", default="http://127.0.0.1:19080")
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--environment",
+        default="Kubernetes acceptance cluster · real CubeSandbox MicroVMs",
+        help="Public environment label included in the redacted evidence report.",
+    )
     args = parser.parse_args()
     secrets = {
         name: os.environ.get(env, "")
@@ -544,7 +570,7 @@ def main() -> None:
     missing = [name for name, value in secrets.items() if not value]
     if missing:
         raise SystemExit("missing acceptance credentials: " + ", ".join(missing))
-    acceptance = Acceptance(args.base_url, **secrets)
+    acceptance = Acceptance(args.base_url, environment=args.environment, **secrets)
     result = acceptance.run()
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "results.json").write_text(

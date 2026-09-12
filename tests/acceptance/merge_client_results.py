@@ -8,7 +8,18 @@ import json
 from pathlib import Path
 from typing import Any
 
-from trusted_tasks_acceptance import render_report
+from trusted_tasks_acceptance import public_ref, render_report
+
+V071_SUMMARIES = {
+    "mounted_snapshot": "A running sandbox with a mounted S3 volume created a snapshot.",
+    "rootfs_rollback": "Rollback restored the root filesystem to the snapshot state.",
+    "external_volume_rollback": "Rollback kept mounted external data at its current state.",
+    "clone_rootfs": "The clone inherited the restored root filesystem state.",
+    "clone_external_volume": "The clone remounted and shared current external data.",
+    "snapshot_delete_while_referenced": (
+        "The referenced snapshot accepted deletion under v0.7.1 lifecycle semantics."
+    ),
+}
 
 
 def main() -> None:
@@ -18,7 +29,9 @@ def main() -> None:
     result_path = args.output_dir / "results.json"
     result: dict[str, Any] = json.loads(result_path.read_text(encoding="utf-8"))
     result["checks"] = [
-        check for check in result["checks"] if check["section"] != "Agent clients"
+        check
+        for check in result["checks"]
+        if check["section"] not in {"Agent clients", "CubeSandbox v0.7.1"}
     ]
     for name in ("clients-node.json", "clients-python.json"):
         client_group = json.loads((args.output_dir / name).read_text(encoding="utf-8"))
@@ -44,13 +57,42 @@ def main() -> None:
                         "trusted_task_tools": client_group[
                             "trusted_task_tools_per_client"
                         ],
-                        "task_ref": client["task_ref"],
+                        "task_ref": public_ref("task", client["task_ref"]),
                         "state": client["state"],
                         "cleanup": client["cleanup"],
                         "receipt_algorithm": client["receipt_alg"],
                     },
                 }
             )
+    v071_path = args.output_dir / "cubesandbox-v071.json"
+    if v071_path.exists():
+        v071 = json.loads(v071_path.read_text(encoding="utf-8"))
+        if v071.get("result") != "PASS" or not all(v071.get("cleanup", {}).values()):
+            raise RuntimeError("CubeSandbox v0.7.1 acceptance did not pass cleanly")
+        for name, summary in V071_SUMMARIES.items():
+            outcome = v071.get("checks", {}).get(name)
+            if outcome is None:
+                raise RuntimeError(f"missing CubeSandbox v0.7.1 check: {name}")
+            result["checks"].append(
+                {
+                    "name": name.replace("_", "-"),
+                    "section": "CubeSandbox v0.7.1",
+                    "summary": summary,
+                    "evidence": {
+                        "backend": v071.get("backend"),
+                        "sdk": v071.get("sdk"),
+                        "outcome": outcome,
+                    },
+                }
+            )
+        result["checks"].append(
+            {
+                "name": "backend-resource-cleanup",
+                "section": "CubeSandbox v0.7.1",
+                "summary": "Every temporary sandbox, snapshot and volume was removed.",
+                "evidence": {"cleanup": "verified", "resources": len(v071["cleanup"])},
+            }
+        )
     result["passed"] = len(result["checks"])
     result["failed"] = 0
     result_path.write_text(

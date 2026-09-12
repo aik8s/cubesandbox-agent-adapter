@@ -2227,7 +2227,7 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
             raise AdapterError(
                 409,
                 "checkpoint_with_mount_denied",
-                "upstream snapshot support for mounted volumes is not enabled",
+                "mounted-workspace checkpoints require explicit profile opt-in",
             )
 
     @staticmethod

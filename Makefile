@@ -11,7 +11,7 @@ test-python:
 	$(PYTHON) tests/test_trusted_execution.py
 
 lint:
-	ruff check adapter plugins/hermes examples/trusted-execution/tasks scripts/verify_receipt.py tests/test_trusted_execution.py tests/acceptance/claude_code_live_smoke.py tests/acceptance/test_claude_code_live_smoke.py
+	ruff check adapter plugins/hermes examples/trusted-execution/tasks scripts/verify_receipt.py tests/test_trusted_execution.py tests/acceptance/claude_code_live_smoke.py tests/acceptance/test_claude_code_live_smoke.py tests/acceptance/trusted_tasks_acceptance.py tests/acceptance/merge_client_results.py tests/acceptance/cubesandbox_v071_volume_snapshot.py
 	node --check plugins/openclaw/index.js
 	node --check plugins/dsh/index.js
 	bash -n scripts/install.sh scripts/dev-up.sh

@@ -113,13 +113,15 @@ complete threat model and deployment checklist.
 
 ## Live acceptance evidence
 
-These historical captures validate trusted-task behavior, not v0.5.0 audit fault
-handling. See the separate [durability guarantees, fault tests and recovery](audit-durability.md).
+On 2026-09-12, the v0.5.0 Adapter was retested after the Kubernetes backend was
+upgraded to CubeSandbox v0.7.1. The suite passed 30/30 checks: 23 Adapter and
+four-client checks, plus seven mounted-volume snapshot, rollback, clone and
+cleanup checks. All captures use the light theme and exclude tokens, addresses,
+full internal identifiers, raw commands, and task data. The machine-readable
+record is [`results.json`](assets/trusted-execution-acceptance/results.json).
 
-The screenshots below come from real CubeSandbox MicroVM execution in an
-isolated acceptance namespace, not a UI mock. The suite passed 23/23 checks.
-All captures use the light theme and exclude tokens, addresses, full internal
-identifiers, raw commands, and task data.
+The separate [durability guide](audit-durability.md) records the v0.5.0 audit
+fault and recovery tests.
 
 Overall result, service health, template catalog, and trust boundary:
 
@@ -145,6 +147,13 @@ OpenClaw, DSH, Codex/MCP, and Hermes each completed the live plan, submit,
 status, result, and receipt flow with verified MicroVM cleanup:
 
 ![Four Agent client acceptance](assets/trusted-execution-acceptance/06-agent-clients.jpg)
+
+The v0.7.1 backend created a snapshot with a mounted S3 volume, restored the
+rootfs while keeping external data current, cloned the restored state with the
+volume remounted, accepted referenced-snapshot deletion, and removed all six
+temporary resources:
+
+![CubeSandbox v0.7.1 mounted-volume snapshot acceptance](assets/trusted-execution-acceptance/07-cubesandbox-v071.jpg)
 
 ### Client-native application evidence
 

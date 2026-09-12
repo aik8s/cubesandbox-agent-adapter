@@ -21,8 +21,10 @@ profiles:
     workspace:
       mode: per-session-volume
       retain_on_kill: true
-    # CubeSandbox v0.7 snapshots currently reject mounted volumes. Keep this
-    # disabled until upstream issue #1599 is resolved and the profile is tested.
+    # CubeSandbox v0.7.1 supports mounted-workspace checkpoints as external
+    # references: VM/rootfs rolls back, mounted data does not. Keep this profile
+    # disabled unless allow_checkpoint_with_mounts is explicitly enabled after
+    # storage-driver, node-affinity, restore, rollback and clone validation.
     checkpoints_enabled: false
 
   checkpoint-code:

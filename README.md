@@ -228,6 +228,16 @@ In the Hermes capture, “6 tools” means one `tool_describe` discovery call pl
 the five trusted-task calls. Detailed acceptance scope and backend evidence are
 in the [trusted-execution guide](docs/trusted-execution.md).
 
+### CubeSandbox v0.7.1 backend acceptance
+
+On 2026-09-12, the Kubernetes backend was upgraded from CubeSandbox v0.7.0 to
+v0.7.1 and the Adapter suite was rerun against rebuilt v0.7.1 template
+artifacts. The final report passed 30/30 checks. The v0.7.1-specific cases cover
+a mounted S3 volume through snapshot, rootfs rollback, external-data retention,
+clone/remount, referenced-snapshot deletion, and complete resource cleanup:
+
+![CubeSandbox v0.7.1 mounted-volume snapshot acceptance](docs/assets/trusted-execution-acceptance/07-cubesandbox-v071.jpg)
+
 The screenshots expose no bearer token, gateway address, full Sandbox ID or
 private cluster identifier. Complete Plan/Task/Sandbox identifiers and the raw
 Hermes signed-receipt payload are also visibly redacted. Model-provider
@@ -244,7 +254,8 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
 
 ## What is included
 
-- authenticated Python Adapter using `cubesandbox==0.7.0`;
+- authenticated Python Adapter using the pinned `cubesandbox==0.7.0` SDK, with
+  upstream backend compatibility reviewed through CubeSandbox v0.7.1;
 - fail-closed declarative profiles with persistent-volume and checkpoint gates;
 - OpenClaw, DSH and Hermes plugins with 19 compatible execution, file, async
   job, checkpoint, and trusted-task tools, plus an MCP facade for Codex;
@@ -678,8 +689,10 @@ hermes plugins disable cube-adapter-tools
 - PTY, SSE output, async cancellation, tenant quotas, and one independent task
   approver are implemented. Quorum approval, external approval callbacks, and
   a general-purpose rate limiter are not.
-- CubeSandbox v0.7 does not support snapshots with volume/host mounts; profiles
-  reject that combination unless an operator explicitly enables the gate.
+- CubeSandbox v0.7.1 supports checkpoints with Volume Plugin or Host Mount as
+  external references: VM/rootfs state rolls back, but mounted data stays
+  current and can remain node-bound. Profiles therefore require an explicit
+  `allow_checkpoint_with_mounts` opt-in after storage-specific validation.
 - Profile `network` fields are operator-owned configuration, never model input.
 - The DSH integration exposes `cube_*` tools; it is not yet a transparent native
   `shell/fs/pty` provider.

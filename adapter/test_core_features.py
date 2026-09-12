@@ -193,7 +193,7 @@ profiles:
         self.assertTrue(reused["reused"])
         self.assertEqual(len(FakeSandbox.created), 2)
 
-    def test_checkpoint_mount_guard_matches_upstream_limitation(self):
+    def test_checkpoint_mount_guard_requires_explicit_opt_in(self):
         profiles = self.write_profiles(
             """
 profiles:
