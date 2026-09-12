@@ -20,6 +20,8 @@
   safe default.
 - Redacted public Plan, Task and Sandbox evidence references with stable hashes
   and added a public environment label to the acceptance renderer.
+- Refreshed the Python 3.12 slim base image and install available Debian security
+  updates during container builds.
 
 ## v0.5.0 — 2026-09-09
 
