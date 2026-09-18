@@ -1,0 +1,30 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "cubesandbox": {
+      "type": "local",
+      "command": [
+        "/absolute/path/to/cubesandbox-agent-adapter/.venv/bin/python",
+        "-m",
+        "adapter.mcp_server"
+      ],
+      "enabled": true,
+      "environment": {
+        "PYTHONPATH": "/absolute/path/to/cubesandbox-agent-adapter",
+        "CUBE_ADAPTER_URL": "https://adapter.example.internal",
+        "CUBE_ADAPTER_PROFILE": "trusted-training",
+        "CUBE_ADAPTER_TOKEN_FILE": "/absolute/path/to/secrets/opencode.token",
+        "CUBE_ADAPTER_CA_FILE": "/absolute/path/to/secrets/production-ca.crt"
+      }
+    }
+  },
+  "permission": {
+    "cubesandbox_*": "deny",
+    "cubesandbox_cube_task_plan": "allow",
+    "cubesandbox_cube_task_submit": "allow",
+    "cubesandbox_cube_task_status": "allow",
+    "cubesandbox_cube_task_result": "allow",
+    "cubesandbox_cube_task_cancel": "allow",
+    "cubesandbox_cube_task_receipt": "allow"
+  }
+}

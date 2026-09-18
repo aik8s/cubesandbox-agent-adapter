@@ -62,7 +62,22 @@ cat >"$TEST_DIR/bin/helm" <<'EOF'
 set -euo pipefail
 printf 'helm %s\n' "$*" >>"$TEST_CALLS"
 EOF
-chmod +x "$TEST_DIR/bin/openclaw" "$TEST_DIR/bin/dsh" "$TEST_DIR/bin/hermes" "$TEST_DIR/bin/kubectl" "$TEST_DIR/bin/helm"
+
+cat >"$TEST_DIR/bin/opencode" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'opencode %s\n' "$*" >>"$TEST_CALLS"
+if [[ "${1:-}" == --version ]]; then
+  printf '%s\n' "${TEST_OPENCODE_VERSION:-1.18.31}"
+fi
+EOF
+
+cat >"$TEST_DIR/bin/python-test" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "${1:-}" == -c && "${2:-}" == 'import mcp' ]]
+EOF
+chmod +x "$TEST_DIR/bin/openclaw" "$TEST_DIR/bin/dsh" "$TEST_DIR/bin/hermes" "$TEST_DIR/bin/opencode" "$TEST_DIR/bin/python-test" "$TEST_DIR/bin/kubectl" "$TEST_DIR/bin/helm"
 
 export TEST_CALLS="$TEST_DIR/calls.log"
 export XDG_CONFIG_HOME="$TEST_DIR/config"
@@ -120,5 +135,42 @@ grep -F "hermes config set plugins.entries.cube-adapter-tools.settings.adapter_u
 grep -F "hermes config set plugins.entries.cube-adapter-tools.settings.token_file $EXPORTED_TOKEN" "$TEST_CALLS" >/dev/null
 grep -F 'hermes config set plugins.entries.cube-adapter-tools.settings.profile offline-code' "$TEST_CALLS" >/dev/null
 grep -F 'hermes plugins doctor cube-adapter-tools --ci' "$TEST_CALLS" >/dev/null
+
+OPENCODE_CONFIG_FILE="$TEST_DIR/config/opencode/opencode.json"
+"$ROOT_DIR/scripts/install.sh" opencode \
+  --adapter-url http://127.0.0.1:18080 \
+  --token-file "$EXPORTED_TOKEN" \
+  --python "$TEST_DIR/bin/python-test" \
+  --config-file "$OPENCODE_CONFIG_FILE"
+
+node - "$OPENCODE_CONFIG_FILE" "$ROOT_DIR" "$EXPORTED_TOKEN" <<'EOF'
+const { readFileSync, statSync } = require("node:fs");
+const [path, root, token] = process.argv.slice(2);
+const value = JSON.parse(readFileSync(path, "utf8"));
+if (value.mcp.cubesandbox.type !== "local") throw new Error("missing local MCP server");
+if (value.mcp.cubesandbox.command[1] !== "-m") throw new Error("invalid MCP command");
+if (value.mcp.cubesandbox.environment.PYTHONPATH !== root) throw new Error("invalid repo path");
+if (value.mcp.cubesandbox.environment.CUBE_ADAPTER_TOKEN_FILE !== token) throw new Error("invalid token file");
+if (value.permission["cubesandbox_*"] !== "deny") throw new Error("missing default deny");
+if (value.permission.cubesandbox_cube_task_plan !== "allow") throw new Error("missing trusted task allow");
+if (Object.values(value).some((entry) => JSON.stringify(entry).includes("test-token-from-kubernetes-secret"))) {
+  throw new Error("raw token leaked into OpenCode config");
+}
+if ((statSync(path).mode & 0o777) !== 0o600) throw new Error("OpenCode config mode is not 0600");
+EOF
+
+TEST_OPENCODE_VERSION='opencode v2.0.8' "$ROOT_DIR/scripts/install.sh" opencode \
+  --adapter-url http://127.0.0.1:18080 \
+  --token-file "$EXPORTED_TOKEN" \
+  --python "$TEST_DIR/bin/python-test" \
+  --config-file "$TEST_DIR/config/opencode/opencode-v2.json"
+
+node - "$TEST_DIR/config/opencode/opencode-v2.json" <<'EOF'
+const { readFileSync } = require("node:fs");
+const value = JSON.parse(readFileSync(process.argv[2], "utf8"));
+if (value.mcp.servers.cubesandbox.codemode !== false) throw new Error("missing V2 MCP server");
+const allowed = value.permissions.find((rule) => rule.action === "cubesandbox_cube_task_plan");
+if (!allowed || allowed.effect !== "allow") throw new Error("missing V2 trusted task allow");
+EOF
 
 printf 'installer tests: OK\n'

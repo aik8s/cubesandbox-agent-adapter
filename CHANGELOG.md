@@ -4,6 +4,8 @@
 
 ### Added
 
+- OpenCode V1/V2 MCP configuration generation, a one-command installer with a
+  trusted-task-only default policy, and a redacted live-acceptance runner.
 - Claude Code client guidance, a redacted live-acceptance runner, and native
   light-mode evidence for both the trusted-task flow and the Codex-equivalent
   acquire/exec/status/release path against the v0.5.0 release image.

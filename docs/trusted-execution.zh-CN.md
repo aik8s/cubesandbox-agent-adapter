@@ -223,6 +223,18 @@ release。TUI 中直接显示预期命令标记与资源释放结果：
 
 ![Claude Code 直连 CubeSandbox MCP 验收](assets/v0.5-acceptance/14-claude-code-application.png)
 
+2026-09-18 又使用 OpenCode 1.18.31 的原生本地 MCP 能力单独验收。生成的客户端策略
+先拒绝整个 `cubesandbox_*` 命名空间，再只允许 plan、submit、status、result、cancel、
+receipt。本次真实会话按预期完成五次调用，最终为 `succeeded`、清理 `verified`、
+回执算法 HS256：
+
+![OpenCode 在自身 Web UI 中完成可信任务](assets/opencode-acceptance/01-opencode-trusted-task.png)
+
+可复现脚本为
+[`opencode_live_smoke.mjs`](../tests/acceptance/opencode_live_smoke.mjs)，提交到仓库的是
+脱敏结果 [`result.json`](assets/opencode-acceptance/result.json)；原始 OpenCode 事件流
+不做留存。
+
 发布版截图不包含令牌、Adapter/模型网关地址、完整 Plan/Task/Sandbox 标识或内网信息。
 Hermes 历史记录里的原始签名 Receipt 载荷已做可见遮挡，但最终状态、清理结果和签名
 算法仍保留在画面中。

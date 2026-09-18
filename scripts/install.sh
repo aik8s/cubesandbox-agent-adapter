@@ -24,6 +24,7 @@ Usage:
   scripts/install.sh openclaw --adapter-url URL (--token-file FILE | --token-from-secret NAME)
   scripts/install.sh dsh --adapter-url URL (--token-file FILE | --token-from-secret NAME) [options]
   scripts/install.sh hermes --adapter-url URL (--token-file FILE | --token-from-secret NAME)
+  scripts/install.sh opencode --adapter-url URL (--token-file FILE | --token-from-secret NAME) [options]
 
 Adapter options:
   --namespace NAME          Kubernetes namespace (default: agent-runtime)
@@ -43,8 +44,15 @@ Adapter options:
   --context NAME            kubectl context
   --disable-network-policy  Disable the chart's default same-namespace policy
 
+OpenCode options:
+  --profile NAME            Adapter profile (default: offline-code)
+  --mode trusted|full       Trusted-task-only allowlist or ask for all tools (default: trusted)
+  --python PATH             Python with Adapter MCP dependencies (default: repo .venv/python)
+  --config-file FILE        OpenCode JSON config to merge (default: global config)
+  --format auto|v1|v2       OpenCode config generation (default: auto from CLI version)
+
 The adapter command creates a strong Secret only when it does not already
-exist. It never prints the token. The OpenClaw, DSH and Hermes commands require
+exist. It never prints the token. The OpenClaw, DSH, Hermes and OpenCode commands require
 an existing read-only token file that is visible to the corresponding Runtime,
 or can export one from Kubernetes with --token-from-secret, --namespace and
 optional --context.
@@ -414,6 +422,88 @@ install_hermes() {
   note "Hermes integration installed; start a new Hermes session"
 }
 
+install_opencode() {
+  local adapter_url=""
+  local token_file=""
+  local token_secret=""
+  local namespace="agent-runtime"
+  local context=""
+  local profile="offline-code"
+  local mode="trusted"
+  local python_bin=""
+  local config_file="${XDG_CONFIG_HOME:-$HOME/.config}/opencode/opencode.json"
+  local format="auto"
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --adapter-url) adapter_url="${2:?}"; shift 2 ;;
+      --token-file) token_file="${2:?}"; shift 2 ;;
+      --token-from-secret) token_secret="${2:?}"; shift 2 ;;
+      --namespace) namespace="${2:?}"; shift 2 ;;
+      --context) context="${2:?}"; shift 2 ;;
+      --profile) profile="${2:?}"; shift 2 ;;
+      --mode) mode="${2:?}"; shift 2 ;;
+      --python) python_bin="${2:?}"; shift 2 ;;
+      --config-file) config_file="${2:?}"; shift 2 ;;
+      --format) format="${2:?}"; shift 2 ;;
+      -h|--help) usage; exit 0 ;;
+      *) die "unknown OpenCode option: $1" ;;
+    esac
+  done
+  [[ -n "$adapter_url" ]] || die "--adapter-url is required"
+  if [[ -n "$token_file" && -n "$token_secret" ]]; then
+    die "use either --token-file or --token-from-secret"
+  fi
+  if [[ -n "$token_secret" ]]; then
+    token_file="${XDG_CONFIG_HOME:-$HOME/.config}/cubesandbox-agent-adapter/token"
+    token_from_secret "$namespace" "$token_secret" "$context" "$token_file"
+  fi
+  [[ -n "$token_file" ]] || die "--token-file or --token-from-secret is required"
+  [[ "$mode" == trusted || "$mode" == full ]] || die "--mode must be trusted or full"
+  [[ "$format" == auto || "$format" == v1 || "$format" == v2 ]] || die "--format must be auto, v1 or v2"
+  validate_url "$adapter_url"
+  require_token_file "$token_file"
+  need node
+  need opencode
+
+  if [[ -z "$python_bin" ]]; then
+    if [[ -x "$ROOT_DIR/.venv/bin/python" ]]; then
+      python_bin="$ROOT_DIR/.venv/bin/python"
+    else
+      python_bin="$(command -v python3 || true)"
+    fi
+  fi
+  [[ -x "$python_bin" ]] || die "--python must be an executable Python path"
+  "$python_bin" -c 'import mcp' >/dev/null 2>&1 \
+    || die "selected Python is missing MCP dependencies; install adapter/requirements.txt"
+
+  token_file="$(cd "$(dirname "$token_file")" && pwd)/$(basename "$token_file")"
+  python_bin="$(cd "$(dirname "$python_bin")" && pwd)/$(basename "$python_bin")"
+  config_file="$(mkdir -p "$(dirname "$config_file")" && cd "$(dirname "$config_file")" && pwd)/$(basename "$config_file")"
+  if [[ "$format" == auto ]]; then
+    local version major
+    version="$(opencode --version | head -1)"
+    if [[ "$version" =~ v?([0-9]+)\.[0-9]+ ]]; then
+      major="${BASH_REMATCH[1]}"
+    else
+      die "cannot determine OpenCode version from: $version"
+    fi
+    if (( major >= 2 )); then format="v2"; else format="v1"; fi
+  fi
+
+  note "installing OpenCode MCP integration ($format, $mode mode)"
+  node "$ROOT_DIR/scripts/configure-opencode.mjs" \
+    --config "$config_file" \
+    --python "$python_bin" \
+    --repo "$ROOT_DIR" \
+    --adapter-url "$adapter_url" \
+    --profile "$profile" \
+    --token-file "$token_file" \
+    --format "$format" \
+    --mode "$mode" >/dev/null
+  note "OpenCode integration installed: $config_file"
+  printf 'Verify with: OPENCODE_CONFIG=%q opencode mcp list\n' "$config_file"
+}
+
 main() {
   local component="${1:-}"
   [[ -n "$component" ]] || { usage; exit 1; }
@@ -423,6 +513,7 @@ main() {
     openclaw) install_openclaw "$@" ;;
     dsh) install_dsh "$@" ;;
     hermes) install_hermes "$@" ;;
+    opencode) install_opencode "$@" ;;
     -h|--help|help) usage ;;
     *) die "unknown component: $component" ;;
   esac

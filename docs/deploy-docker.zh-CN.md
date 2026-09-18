@@ -161,9 +161,14 @@ install -d -m 700 "$HOME/.config/cubesandbox-agent-adapter"
 ./scripts/install.sh hermes \
   --adapter-url http://127.0.0.1:18080 \
   --token-file "$HOME/.config/cubesandbox-agent-adapter/docker.token"
+
+# OpenCode：默认生成只允许可信任务的 MCP 权限
+./scripts/install.sh opencode \
+  --adapter-url http://127.0.0.1:18080 \
+  --token-file "$HOME/.config/cubesandbox-agent-adapter/docker.token"
 ```
 
-MCP 客户端参考 [README 的 MCP 配置](../README.zh-CN.md#mcp-stdio-门面)，将 URL
+其他 MCP 客户端参考 [README 的 MCP 配置](../README.zh-CN.md#mcp-stdio-门面)，将 URL
 设为上述回环地址，Token 文件设为刚才创建的文件；本地 MCP Python 环境需安装
 `adapter/requirements.txt`。这些客户端安装器仍需要各应用自身的 CLI。
 

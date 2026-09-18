@@ -1,0 +1,22 @@
+{
+  "title": "OpenCode CubeSandbox acceptance",
+  "generated_at": "2026-09-18T11:42:38.109Z",
+  "result": "PASS",
+  "client": "OpenCode 1.18.31",
+  "transport": "local MCP stdio",
+  "backend": "CubeSandbox v0.7.1 real MicroVM",
+  "policy": "trusted-task-only",
+  "tools": [
+    "cubesandbox_cube_task_plan",
+    "cubesandbox_cube_task_submit",
+    "cubesandbox_cube_task_status",
+    "cubesandbox_cube_task_result",
+    "cubesandbox_cube_task_receipt"
+  ],
+  "state": "succeeded",
+  "cleanup": "verified",
+  "receipt_alg": "HS256",
+  "plan_ref": "plan#21534ee9702e",
+  "task_ref": "task#f533713682d4",
+  "privacy": "Tokens, addresses, paths, command text, full identifiers, model credentials, and receipt payload are excluded."
+}

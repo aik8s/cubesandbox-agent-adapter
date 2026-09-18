@@ -170,9 +170,14 @@ configured with its model provider:
 ./scripts/install.sh hermes \
   --adapter-url http://127.0.0.1:18080 \
   --token-file "$HOME/.config/cubesandbox-agent-adapter/docker.token"
+
+# OpenCode: generates a trusted-task-only MCP policy by default
+./scripts/install.sh opencode \
+  --adapter-url http://127.0.0.1:18080 \
+  --token-file "$HOME/.config/cubesandbox-agent-adapter/docker.token"
 ```
 
-For MCP hosts, adapt the [README MCP configuration](../README.md#mcp-stdio-facade)
+For other MCP hosts, adapt the [README MCP configuration](../README.md#mcp-stdio-facade)
 with the loopback URL and the Token file above. Install `adapter/requirements.txt`
 in the local MCP Python environment. Client installers require each application's CLI.
 

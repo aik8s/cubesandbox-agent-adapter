@@ -202,6 +202,20 @@ shows the expected command marker and confirmed release:
 
 ![Claude Code direct CubeSandbox MCP acceptance](assets/v0.5-acceptance/14-claude-code-application.png)
 
+OpenCode 1.18.31 was tested separately on 2026-09-18 through its native local
+MCP support. The generated client policy denied the full `cubesandbox_*`
+namespace and then allowed only plan, submit, status, result, cancel, and
+receipt. The real run used the expected five-call path and ended with
+`succeeded`, cleanup `verified`, and an HS256 receipt:
+
+![OpenCode trusted-task run in its native Web UI](assets/opencode-acceptance/01-opencode-trusted-task.png)
+
+The reproducible runner is
+[`opencode_live_smoke.mjs`](../tests/acceptance/opencode_live_smoke.mjs), and
+the committed redacted record is
+[`result.json`](assets/opencode-acceptance/result.json). The raw OpenCode event
+stream is intentionally not retained.
+
 Publication captures omit tokens, Adapter and model-gateway addresses, complete
 Plan/Task/Sandbox identifiers, and private network details. The raw signed
 receipt payload in the Hermes history is visibly redacted; its final status,

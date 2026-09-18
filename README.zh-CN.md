@@ -5,14 +5,14 @@
 [项目官网](https://aik8s.github.io/cubesandbox-agent-adapter/) · [v0.5.0 更新日志](CHANGELOG.md) · [官网发布说明](docs/website.md)
 
 这是一个社区集成项目，用于把 OpenClaw、DeepSeek Harness（DSH）、Hermes
-Agent 以及 Codex、Claude Code 等 MCP Host 的工具调用，经受控策略路由到
+Agent 以及 Codex、Claude Code、OpenCode 等 MCP Host 的工具调用，经受控策略路由到
 [CubeSandbox](https://github.com/TencentCloud/CubeSandbox) MicroVM 中执行。
 
 ```text
 OpenClaw Tool Plugin ──────────┐
 DSH Cordis Plugin ─────────────┤
 Hermes Tool Plugin ────────────┼─ 认证 HTTP ─→ Adapter ─→ Cube SDK ─→ MicroVM
-Codex / Claude Code / MCP Host ─→ MCP stdio ─┘            │
+Codex / Claude Code / OpenCode ─→ MCP stdio ─┘            │
                                                         └─ 持久化脱敏审计
 ```
 
@@ -84,7 +84,7 @@ MicroVM 清理和签名 Execution Receipt；Action Scope 允许 Agent 使用 `ta
 
 ## 实战证据
 
-下面不是产品效果图，而是 OpenClaw、DSH、Hermes Agent、Codex、Claude Code、
+下面不是产品效果图，而是 OpenClaw、DSH、Hermes Agent、Codex、Claude Code、OpenCode、
 Adapter 和 Kubernetes 上的 CubeSandbox 实际联调截图。它们证明的是功能实验已经
 跑通，不代表性能基准或生产就绪。
 
@@ -212,6 +212,17 @@ Light 模式 TUI，直接显示工具次数、调用顺序和最终验收结果�
 可复现脚本为
 [`claude_code_live_smoke.py`](tests/acceptance/claude_code_live_smoke.py)。
 
+2026-09-18，OpenCode 1.18.31 又通过本地 MCP stdio 单独完成相同的五调用可信任务
+链路。生成的 OpenCode 权限先拒绝整个 `cubesandbox_*` 命名空间，再只放行六个可信
+任务工具；本次实际使用 plan、submit、status、result、receipt，最后确认 MicroVM
+清理为 `verified`：
+
+![OpenCode 在自身 Light 模式 Web UI 中完成可信任务](docs/assets/opencode-acceptance/01-opencode-trusted-task.png)
+
+脱敏结果见 [`result.json`](docs/assets/opencode-acceptance/result.json)，可通过
+[`opencode_live_smoke.mjs`](tests/acceptance/opencode_live_smoke.mjs) 重跑；原始事件流
+不进入仓库。
+
 Hermes 截图里的“6 tools”由 1 次 `tool_describe` 工具发现和 5 次可信任务调用组成。
 更完整的验收范围和后端证据见[可信执行文档](docs/trusted-execution.zh-CN.md)。
 
@@ -245,10 +256,10 @@ Agent 工具结果中的 sandbox_ref
   CubeSandbox v0.7.1 服务端的上游兼容性审查；
 - 默认拒绝公网的声明式 Profile，并提供持久卷与检查点能力门控；
 - OpenClaw、DSH、Hermes 共用 19 个执行、文件、异步 Job、检查点和可信任务工具，
-  并提供 Codex 等 Host 可使用的 MCP 门面；
+  并提供 Codex、Claude Code、OpenCode 可使用的 MCP 门面；
 - DSH Cordis Plugin，以及禁用常见宿主 Shell/FS 工具的 Profile Patch；
 - 通过官方 Plugin Doctor 校验的 Hermes Agent 原生 Tool Plugin；
-- Kubernetes、OpenClaw、DSH 和 Hermes Agent 一键安装脚本；
+- Kubernetes、OpenClaw、DSH、Hermes Agent 和 OpenCode 一键安装脚本；
 - 本地开发用 Docker Compose；
 - Helm Chart、纯 Kubernetes Manifest、测试和镜像发布流水线；
 - Redis 加密恢复和分布式锁（多副本仅可在显式降级为 `best_effort` 审计时使用）；
@@ -269,7 +280,7 @@ Agent 工具结果中的 sandbox_ref
 2. Adapter 能访问 CubeAPI 和 CubeProxy；
 3. 目标 OpenClaw、DSH 或 Hermes Runtime 能访问 Adapter；
 4. 部署到 Kubernetes 时已经安装 `kubectl` 和 `helm`；
-5. 安装对应插件时已经安装 `openclaw`、`dsh` 或 `hermes`。
+5. 接入对应客户端时已经安装 `openclaw`、`dsh`、`hermes` 或 `opencode`。
 6. 本地 Python 开发与 MCP 门面使用 Python 3.10 或更高版本。
 
 安装器不会安装 CubeSandbox 本身。Kubernetes 节点的 KVM、XFS、bpffs、CNI、
@@ -426,6 +437,37 @@ hermes -t cube-adapter
 应使用 `cube-adapter` Toolset，并在生产会话所用 Profile 或 Gateway 策略中落实同样
 的限制。
 
+## 一键接入 OpenCode
+
+OpenCode 通过 Adapter 的本地 MCP stdio 门面接入。安装器会自动识别 OpenCode V1/V2，
+安全合并严格 JSON 配置，只把权限为 `0600` 的 Token 文件路径写入配置，并默认启用
+可信任务最小权限：
+
+```bash
+./scripts/install.sh opencode \
+  --adapter-url http://127.0.0.1:18080 \
+  --namespace agent-runtime \
+  --token-from-secret cube-adapter-auth \
+  --profile trusted-training
+```
+
+生成的策略先拒绝全部 `cubesandbox_*` 工具，再只允许 plan、submit、status、result、
+cancel、receipt；独立审批不会暴露给 Agent。只有确实需要原始租约、命令、文件、Job、
+Artifact、PTY 和检查点操作时才使用 `--mode full`，届时 OpenCode 会逐次询问。
+
+如果原有 OpenCode 配置带 JSONC 注释，请使用独立的严格 JSON 文件，避免重写注释：
+
+```bash
+./scripts/install.sh opencode \
+  --adapter-url https://adapter.example.internal \
+  --token-file /绝对路径/opencode.token \
+  --config-file /绝对路径/cube-opencode.json
+OPENCODE_CONFIG=/绝对路径/cube-opencode.json opencode
+```
+
+生成格式和安全边界见 [OpenCode 接入示例](examples/opencode/)。模型 Provider 凭据仍由
+OpenCode 管理，Adapter 不需要模型 API Key。
+
 ## Docker 部署与本地开发
 
 首次部署请使用 [Docker Compose 部署指南](docs/deploy-docker.zh-CN.md)：它从 v0.5.0
@@ -520,6 +562,10 @@ claude --mcp-config examples/trusted-execution/mcp-host.example.json \
 5 个可信任务工具；使用另一个最小权限主体并传入 `--flow direct`，还可验证与 Codex
 一致的 acquire/exec/status/release 链路。脚本只输出脱敏摘要，Claude 登录/模型凭据
 不会写入 MCP 文件。
+
+OpenCode 使用自己的 `mcp` 配置结构，而不是 `mcpServers`。可直接运行
+`scripts/install.sh opencode` 生成，或从
+[`examples/opencode/opencode.example.json`](examples/opencode/opencode.example.json) 开始。
 
 MCP 还提供 `cube_task_plan`、`cube_task_submit`、`cube_task_status`、
 `cube_task_result`、`cube_task_cancel` 和 `cube_task_receipt`。审批故意不作为 Agent MCP

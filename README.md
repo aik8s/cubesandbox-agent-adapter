@@ -5,14 +5,14 @@
 [Project website](https://aik8s.github.io/cubesandbox-agent-adapter/) · [v0.5.0 changelog](CHANGELOG.md) · [Website publishing](docs/website.md)
 
 Community integration that routes OpenClaw, DeepSeek Harness (DSH), Hermes
-Agent and MCP hosts such as Codex or Claude Code into policy-controlled
+Agent and MCP hosts such as Codex, Claude Code or OpenCode into policy-controlled
 [CubeSandbox](https://github.com/TencentCloud/CubeSandbox) MicroVMs.
 
 ```text
 OpenClaw Tool Plugin ──────────┐
 DSH Cordis Plugin ─────────────┤
 Hermes Tool Plugin ────────────┼─ authenticated HTTP ─→ Adapter ─→ Cube SDK ─→ MicroVM
-Codex / Claude Code / MCP host ─→ MCP stdio ─┘                │
+Codex / Claude Code / OpenCode ─→ MCP stdio ─┘                │
                                                             └─ durable redacted audit
 ```
 
@@ -97,8 +97,8 @@ prompts, dependency-free task scripts, and synthetic fixtures:
 
 ## Hands-on evidence
 
-The following screenshots come from real OpenClaw, DSH, Hermes Agent, Codex and
-Claude Code sessions connected to a Kubernetes-hosted CubeSandbox deployment.
+The following screenshots come from real OpenClaw, DSH, Hermes Agent, Codex,
+Claude Code and OpenCode sessions connected to a Kubernetes-hosted CubeSandbox deployment.
 They are evidence from functional lab runs, not a benchmark or a
 production-readiness claim.
 
@@ -224,6 +224,18 @@ The redacted machine-readable result is
 and the reproducible live runner is
 [`claude_code_live_smoke.py`](tests/acceptance/claude_code_live_smoke.py).
 
+On 2026-09-18, OpenCode 1.18.31 independently completed the same five-call
+trusted-task path through the Adapter's local MCP stdio server. The generated
+OpenCode policy denied the full `cubesandbox_*` namespace, then allowed only
+the six trusted-task tools; the captured run used plan, submit, status, result,
+and receipt and ended with verified MicroVM cleanup:
+
+![OpenCode trusted-task run in its native light Web UI](docs/assets/opencode-acceptance/01-opencode-trusted-task.png)
+
+The committed result is [`result.json`](docs/assets/opencode-acceptance/result.json),
+and [`opencode_live_smoke.mjs`](tests/acceptance/opencode_live_smoke.mjs)
+reproduces the client run without retaining the raw event stream.
+
 In the Hermes capture, “6 tools” means one `tool_describe` discovery call plus
 the five trusted-task calls. Detailed acceptance scope and backend evidence are
 in the [trusted-execution guide](docs/trusted-execution.md).
@@ -258,10 +270,11 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
   upstream backend compatibility reviewed through CubeSandbox v0.7.1;
 - fail-closed declarative profiles with persistent-volume and checkpoint gates;
 - OpenClaw, DSH and Hermes plugins with 19 compatible execution, file, async
-  job, checkpoint, and trusted-task tools, plus an MCP facade for Codex;
+  job, checkpoint, and trusted-task tools, plus an MCP facade for Codex,
+  Claude Code and OpenCode;
 - DSH Cordis Plugin and a patch that disables common host Shell/FS tools;
 - Hermes Agent native Tool Plugin with official Plugin Doctor validation;
-- one-command installers for Kubernetes, OpenClaw, DSH and Hermes Agent;
+- one-command installers for Kubernetes, OpenClaw, DSH, Hermes Agent and OpenCode;
 - Docker Compose for local development;
 - Helm chart, plain Kubernetes manifest, tests and release workflows;
 - Redis-backed encrypted recovery and distributed locking (multi-replica only
@@ -285,7 +298,7 @@ Before installation, verify that:
 2. the Adapter can reach CubeAPI and CubeProxy;
 3. the target Runtime can reach the Adapter;
 4. `kubectl` and `helm` are installed for Kubernetes deployment;
-5. `openclaw`, `dsh` or `hermes` is installed for the corresponding plugin.
+5. `openclaw`, `dsh`, `hermes` or `opencode` is installed for the corresponding client.
 6. local Python development and the MCP facade use Python 3.10 or newer.
 
 The installer never installs CubeSandbox itself.
@@ -444,6 +457,40 @@ Loading the plugin does not globally disable Hermes' host terminal or file
 tools. Use the `cube-adapter` toolset for untrusted work and enforce the same
 restriction in the profile or gateway policy used by production sessions.
 
+## Quick start: OpenCode
+
+OpenCode uses the Adapter's local MCP stdio facade. The installer detects
+OpenCode V1 or V2, merges its strict JSON config, keeps the bearer token in a
+mode-0600 file, and defaults to a trusted-task-only policy:
+
+```bash
+./scripts/install.sh opencode \
+  --adapter-url http://127.0.0.1:18080 \
+  --namespace agent-runtime \
+  --token-from-secret cube-adapter-auth \
+  --profile trusted-training
+```
+
+The generated policy denies all `cubesandbox_*` tools first, then allows only
+plan, submit, status, result, cancel, and receipt. Independent approval remains
+outside the Agent. Use `--mode full` only when users should be prompted for raw
+lease, command, file, job, artifact, PTY, and checkpoint operations.
+
+If an existing OpenCode config contains JSONC comments, use a dedicated strict
+JSON file instead of rewriting it:
+
+```bash
+./scripts/install.sh opencode \
+  --adapter-url https://adapter.example.internal \
+  --token-file /absolute/path/to/opencode.token \
+  --config-file /absolute/path/to/cube-opencode.json
+OPENCODE_CONFIG=/absolute/path/to/cube-opencode.json opencode
+```
+
+See the [OpenCode integration example](examples/opencode/) for the generated
+policy. Model-provider credentials stay in OpenCode and are not used by the
+Adapter.
+
 ## Docker deployment and local development
 
 For a first installation, follow the [Docker Compose deployment guide](docs/deploy-docker.md).
@@ -550,6 +597,10 @@ The default runner permits only the five trusted-task tools. Pass
 `--flow direct` with a separately scoped principal to verify the same
 acquire/exec/status/release path as Codex. It emits only a redacted summary;
 Claude login/model credentials are never placed in the MCP file.
+
+OpenCode uses its own `mcp` schema rather than `mcpServers`; generate it with
+`scripts/install.sh opencode` or start from
+[`examples/opencode/opencode.example.json`](examples/opencode/opencode.example.json).
 
 The facade also exposes `cube_task_plan`, `cube_task_submit`,
 `cube_task_status`, `cube_task_result`, `cube_task_cancel`, and

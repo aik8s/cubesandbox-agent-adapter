@@ -70,6 +70,20 @@ summary suitable for acceptance records. To check the Codex-equivalent direct
 path, use a different MCP config whose principal has only `lease:acquire`,
 `exec:run`, `lease:status`, and `lease:release`, then add `--flow direct`.
 
+OpenCode uses a different config schema. Generate its V1/V2 configuration and
+trusted-task-only permissions with:
+
+```bash
+./scripts/install.sh opencode \
+  --adapter-url https://adapter.example.internal \
+  --token-file /absolute/path/to/secrets/opencode.token \
+  --profile trusted-training
+```
+
+See [`../opencode/`](../opencode/) for the generated shape. A release-style
+client check is available in
+[`opencode_live_smoke.mjs`](../../tests/acceptance/opencode_live_smoke.mjs).
+
 The task-only token must not include `exec:run`, `job:*`, `file:*`,
 `artifact:*`, `pty:*`, or `checkpoint:*`. Even though the generic MCP facade
 advertises those tools, the HTTP boundary rejects them. `allowed_task_templates`
