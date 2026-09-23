@@ -1,0 +1,30 @@
+{
+  "backend": "CubeSandbox v0.7.1",
+  "checked_at": "2026-09-23",
+  "checks": {
+    "clone_external_volume": "shared-current-data",
+    "clone_rootfs": "isolated",
+    "external_volume_rollback": "kept-current",
+    "mounted_snapshot": "created",
+    "rootfs_rollback": "restored",
+    "snapshot_delete_while_referenced": "accepted"
+  },
+  "cleanup": {
+    "clone_killed": true,
+    "snapshot_deleted": true,
+    "source_killed": true,
+    "verifier_killed": true,
+    "volume_destroyed": true,
+    "writer_killed": true
+  },
+  "resource_baseline": {
+    "active_sandboxes_after": 0,
+    "active_sandboxes_before": 0,
+    "snapshots_after": 2,
+    "snapshots_before": 2,
+    "volumes_after": 0,
+    "volumes_before": 0
+  },
+  "result": "PASS",
+  "sdk": "0.7.0"
+}

@@ -155,6 +155,11 @@ temporary resources:
 
 ![CubeSandbox v0.7.1 mounted-volume snapshot acceptance](assets/trusted-execution-acceptance/07-cubesandbox-v071.jpg)
 
+The same scenario was rerun on 2026-09-23 and passed again. The active sandbox,
+snapshot and Volume counts returned to their exact pre-run values; the redacted
+record is
+[`snapshot-results-2026-09-23.json`](assets/cubesandbox-upstream/snapshot-results-2026-09-23.json).
+
 ### Client-native application evidence
 
 The summary cards above correlate the backend checks. The following captures

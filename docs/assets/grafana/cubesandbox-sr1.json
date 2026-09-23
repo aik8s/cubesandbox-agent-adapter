@@ -1,0 +1,169 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "description": "CubeSandbox v0.7.1 control-plane, Cubelet and per-sandbox resource metrics collected by the sr1 kube-prometheus-stack.",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "sr1-prometheus"},
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 4}]},
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 6, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"colorMode": "background_solid", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showPercentChange": false, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum(up{cluster=\"sr1\",cubesandbox_component=~\"master|templatecenter|cubelet|cubelet-resource\"})", "instant": true, "legendFormat": "targets", "range": false, "refId": "A"}],
+      "title": "采集目标在线",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "sr1-prometheus"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}, "unit": "short"},
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 6, "x": 6, "y": 0},
+      "id": 2,
+      "options": {"colorMode": "background_solid", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showPercentChange": false, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "sum(cube_cubebox_scheduler_mvm_running_num{cluster=\"sr1\"})", "instant": true, "legendFormat": "running", "range": false, "refId": "A"}],
+      "title": "运行中 MicroVM",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "sr1-prometheus"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}, "unit": "short"},
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 6, "x": 12, "y": 0},
+      "id": 3,
+      "options": {"colorMode": "background_solid", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showPercentChange": false, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "max(cube_snapshot_orphan_count{cluster=\"sr1\"})", "instant": true, "legendFormat": "orphans", "range": false, "refId": "A"}],
+      "title": "孤儿 Snapshot Replica",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "sr1-prometheus"},
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}, "unit": "short"},
+        "overrides": []
+      },
+      "gridPos": {"h": 5, "w": 6, "x": 18, "y": 0},
+      "id": 4,
+      "options": {"colorMode": "background_solid", "graphMode": "area", "justifyMode": "auto", "orientation": "auto", "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "showPercentChange": false, "textMode": "auto", "wideLayout": true},
+      "targets": [{"editorMode": "code", "expr": "max(cube_snapshot_storage_mode{cluster=\"sr1\",mode=\"healthy\"})", "instant": true, "legendFormat": "healthy", "range": false, "refId": "A"}],
+      "title": "存在 Healthy Snapshot 存储",
+      "type": "stat"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "sr1-prometheus"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "showPoints": "never", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
+      "id": 5,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"editorMode": "code", "expr": "sum by (pod) (cube_cubebox_scheduler_mvm_num{cluster=\"sr1\"})", "legendFormat": "{{pod}} total", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "sum by (pod) (cube_cubebox_scheduler_mvm_running_num{cluster=\"sr1\"})", "legendFormat": "{{pod}} running", "range": true, "refId": "B"}
+      ],
+      "title": "MicroVM 数量",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "sr1-prometheus"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "showPoints": "never", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}}, "unit": "short"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
+      "id": 6,
+      "options": {"legend": {"calcs": ["lastNotNull"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [
+        {"editorMode": "code", "expr": "sum by (result) (rate(cube_snapshot_commit_total{cluster=\"sr1\"}[5m]))", "legendFormat": "commit {{result}}", "range": true, "refId": "A"},
+        {"editorMode": "code", "expr": "sum by (result) (rate(cube_snapshot_rollback_total{cluster=\"sr1\"}[5m]))", "legendFormat": "rollback {{result}}", "range": true, "refId": "B"},
+        {"editorMode": "code", "expr": "sum by (result) (rate(cube_snapshot_delete_total{cluster=\"sr1\"}[5m]))", "legendFormat": "delete {{result}}", "range": true, "refId": "C"}
+      ],
+      "title": "Snapshot 操作速率",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "sr1-prometheus"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "showPoints": "never", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}}, "unit": "cores"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 13},
+      "id": 7,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "cube_cubebox_scheduler_quota_cpu_usage_milli{cluster=\"sr1\"} / 1000", "legendFormat": "{{pod}}", "range": true, "refId": "A"}],
+      "title": "Cubelet 已分配 CPU",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "sr1-prometheus"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "showPoints": "never", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}}, "unit": "bytes"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 13},
+      "id": 8,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "cube_cubebox_scheduler_quota_mem_mb_usage{cluster=\"sr1\"} * 1024 * 1024", "legendFormat": "{{pod}}", "range": true, "refId": "A"}],
+      "title": "Cubelet 已分配内存",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "sr1-prometheus"},
+      "description": "只有运行中沙箱才有序列；空面板不等于采集失败，请先看顶部采集目标。",
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "showPoints": "never", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}}, "unit": "cores"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 21},
+      "id": 9,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "label_replace(rate(cubesandbox_host_sandbox_cpu_usage_seconds_total{cluster=\"sr1\"}[5m]), \"sandbox\", \"$1…\", \"sandbox_id\", \"(.{8}).*\")", "legendFormat": "{{sandbox}}", "range": true, "refId": "A"}],
+      "title": "Sandbox Host CPU 使用",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "sr1-prometheus"},
+      "description": "Host cgroup 计费包含 VMM/CubeShim 等开销，不等同于 guest working set。",
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "showPoints": "never", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}}, "unit": "bytes"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 21},
+      "id": 10,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "label_replace(cubesandbox_host_sandbox_memory_current_bytes{cluster=\"sr1\"}, \"sandbox\", \"$1…\", \"sandbox_id\", \"(.{8}).*\")", "legendFormat": "{{sandbox}}", "range": true, "refId": "A"}],
+      "title": "Sandbox Host 内存",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "sr1-prometheus"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "showPoints": "never", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}}, "unit": "bytes"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 29},
+      "id": 11,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "process_resident_memory_bytes{cluster=\"sr1\",cubesandbox_component=~\"master|templatecenter|cubelet\"}", "legendFormat": "{{cubesandbox_component}} / {{pod}}", "range": true, "refId": "A"}],
+      "title": "组件 RSS",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "sr1-prometheus"},
+      "fieldConfig": {"defaults": {"custom": {"drawStyle": "line", "fillOpacity": 12, "lineInterpolation": "smooth", "lineWidth": 2, "pointSize": 5, "showPoints": "never", "spanNulls": true, "stacking": {"group": "A", "mode": "none"}}, "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 29},
+      "id": 12,
+      "options": {"legend": {"calcs": ["lastNotNull", "max"], "displayMode": "table", "placement": "bottom", "showLegend": true}, "tooltip": {"mode": "multi", "sort": "desc"}},
+      "targets": [{"editorMode": "code", "expr": "scrape_duration_seconds{cluster=\"sr1\",cubesandbox_component=~\"master|templatecenter|cubelet|cubelet-resource\"}", "legendFormat": "{{cubesandbox_component}} / {{pod}}", "range": true, "refId": "A"}],
+      "title": "Prometheus 采集耗时",
+      "type": "timeseries"
+    }
+  ],
+  "refresh": "30s",
+  "schemaVersion": 41,
+  "tags": ["cubesandbox", "sr1", "microvm"],
+  "templating": {"list": []},
+  "time": {"from": "now-1h", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "CubeSandbox / sr1",
+  "uid": "cubesandbox-sr1",
+  "version": 1,
+  "weekStart": ""
+}

@@ -1,0 +1,105 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cubesandbox-master
+  namespace: monitoring
+  labels:
+    monitoring.aik8s.run/instance: aibrix
+spec:
+  namespaceSelector:
+    matchNames:
+      - cube-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: master
+      app.kubernetes.io/instance: cube
+      app.kubernetes.io/name: cube
+  endpoints:
+    - port: cubemaster
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      relabelings:
+        - targetLabel: cluster
+          replacement: sr1
+        - targetLabel: cubesandbox_component
+          replacement: master
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: "(cube_.*|go_.*|process_.*|promhttp_.*)"
+          action: keep
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: cubesandbox-templatecenter
+  namespace: monitoring
+  labels:
+    monitoring.aik8s.run/instance: aibrix
+spec:
+  namespaceSelector:
+    matchNames:
+      - cube-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: templatecenter
+      app.kubernetes.io/instance: cube
+      app.kubernetes.io/name: cube
+  endpoints:
+    - port: templatecenter
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      relabelings:
+        - targetLabel: cluster
+          replacement: sr1
+        - targetLabel: cubesandbox_component
+          replacement: templatecenter
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: "(cube_.*|go_.*|process_.*|promhttp_.*)"
+          action: keep
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: cubesandbox-cubelet
+  namespace: monitoring
+  labels:
+    monitoring.aik8s.run/instance: aibrix
+spec:
+  namespaceSelector:
+    matchNames:
+      - cube-system
+  selector:
+    matchLabels:
+      app.kubernetes.io/component: cube-node
+      app.kubernetes.io/instance: cube
+      app.kubernetes.io/name: cube
+  podMetricsEndpoints:
+    - port: cubelet-http
+      path: /v1/metrics
+      interval: 30s
+      scrapeTimeout: 10s
+      relabelings:
+        - targetLabel: cluster
+          replacement: sr1
+        - targetLabel: cubesandbox_component
+          replacement: cubelet
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: "(cube_.*|chi_.*|containerd_gc_.*|go_.*|process_.*|promhttp_.*)"
+          action: keep
+    - port: cubelet-http
+      path: /v1/metrics/resource
+      interval: 30s
+      scrapeTimeout: 10s
+      relabelings:
+        - targetLabel: cluster
+          replacement: sr1
+        - targetLabel: cubesandbox_component
+          replacement: cubelet-resource
+      metricRelabelings:
+        - sourceLabels: [__name__]
+          regex: "cubesandbox_.*"
+          action: keep

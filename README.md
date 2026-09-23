@@ -267,7 +267,8 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
 ## What is included
 
 - authenticated Python Adapter using the pinned `cubesandbox==0.7.0` SDK, with
-  upstream backend compatibility reviewed through CubeSandbox v0.7.1;
+  stable backend compatibility validated on CubeSandbox v0.7.1 and the
+  v0.7.2-rc1 source/API and upgrade risks reviewed separately;
 - fail-closed declarative profiles with persistent-volume and checkpoint gates;
 - OpenClaw, DSH and Hermes plugins with 19 compatible execution, file, async
   job, checkpoint, and trusted-task tools, plus an MCP facade for Codex,
@@ -289,6 +290,16 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
 
 The current release and issue assessment is tracked in
 [CubeSandbox upstream status](docs/cubesandbox-upstream.md).
+
+Native CubeMaster, TemplateCenter and Cubelet metrics, the sr1
+kube-prometheus-stack monitors, and the Grafana dashboard are documented in
+[CubeSandbox monitoring](docs/cubesandbox-monitoring.md).
+
+For office-network Agents calling one or more production CubeSandbox clusters,
+read [the production and multi-cluster boundary](docs/multi-cluster-production.md).
+Today one Adapter process binds to one backend; deploy one isolated Adapter
+release per backend. Allow both CubeAPI and CubeProxy traffic—CubeAPI-only
+access can create a sandbox but cannot carry command, file, PTY or job results.
 
 ## Prerequisites
 

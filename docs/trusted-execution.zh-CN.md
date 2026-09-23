@@ -182,6 +182,10 @@ v0.7.1 后端完成了挂载 S3 Volume 的快照、rootfs 回滚、外部数据�
 
 ![CubeSandbox v0.7.1 挂载卷快照验收](assets/trusted-execution-acceptance/07-cubesandbox-v071.jpg)
 
+2026-09-23 再次运行同一场景并通过；测试后的活动 Sandbox、Snapshot 和 Volume 数量
+均精确恢复到测试前基线。脱敏结果见
+[`snapshot-results-2026-09-23.json`](assets/cubesandbox-upstream/snapshot-results-2026-09-23.json)。
+
 ### 客户端自身界面实测证据
 
 上面的证据卡用于汇总和关联后端验收结果；下列截图直接来自各客户端自身的

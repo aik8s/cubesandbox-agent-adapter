@@ -1,12 +1,13 @@
 # CubeSandbox upstream status / 上游状态
 
-Checked on 2026-09-12 / 核对日期：2026-09-12.
+Checked on 2026-09-23 / 核对日期：2026-09-23.
 
-## Latest release / 最新版本
+## Release channels / 发布通道
 
 [CubeSandbox v0.7.1](https://github.com/TencentCloud/CubeSandbox/releases/tag/v0.7.1)
-was released on 2026-09-11 with 70 commits from 24 contributors. It is primarily
-a control-plane HA, storage and correctness release:
+remains the latest stable release. It was released on 2026-09-11 with 70
+commits from 24 contributors and is primarily a control-plane HA, storage and
+correctness release:
 
 - 独立的 CubeTemplateCenter 支持多副本 CubeMaster，生命周期管理支持主备；
 - 带 Host Mount 或 Volume Plugin 的 Sandbox 可以执行 Snapshot、Restore、
@@ -17,14 +18,51 @@ a control-plane HA, storage and correctness release:
 - 修复恢复后日志、非法 CPU/内存、Resume 超时、S3 增量快照、LLM 长响应、
   Registry 凭据日志泄露等问题。
 
+[CubeSandbox v0.7.2-rc1](https://github.com/TencentCloud/CubeSandbox/releases/tag/v0.7.2-rc1)
+was published as a pre-release on 2026-09-21. It is 53 commits ahead of v0.7.1.
+The release page currently contains only the version string, so the following
+assessment is based on the signed tag and its commit range rather than on a
+stable-release compatibility promise:
+
+- Kubernetes `cube-node` now defaults to `hostNetwork: true`. Existing releases
+  must either pin `cubeNode.hostNetwork: false`, or drain every compute node and
+  set the one-time `cubeNode.hostNetworkChangeAck: true` migration acknowledgement.
+- Host networking preserves the sandbox TAP devices and cubevs hooks when the
+  Big Pod is recreated, but Kubernetes NetworkPolicy no longer governs sandbox
+  traffic. Host ports, Service/sandbox CIDR overlap, Cilium/eBPF interaction and
+  Pod Security admission must be validated before adopting the new default.
+- Snapshot correctness work freezes the VM across memory and rootfs capture and
+  preserves rootfs artifacts referenced by snapshots. S3lvol gains hot-upgrade
+  I/O pausing, faster restore reads and namespace-ID reuse.
+- The Python SDK source now always uses CubeSandbox's direct Connect API for
+  commands and adds optional user selection to more filesystem calls, removing
+  the optional E2B command implementation path.
+- The upstream repository now documents an OpenCode `tool.execute.before` hook
+  that redirects the built-in Bash tool. This Adapter's OpenCode integration is
+  different: it exposes explicit MCP tools, server-owned policies, approval,
+  durable audit and receipts instead of transparently rewriting Bash.
+
+The sr1 acceptance cluster deliberately remains on stable v0.7.1. Its current
+`cube-node` uses the Pod network and the cluster uses Cilium, so adopting the RC
+default is a network-boundary migration, not a routine image bump. A v0.7.2 RC
+canary must explicitly choose the network mode and must not be described as a
+production upgrade.
+
 ### Backend release and SDK package are different versions
 
-The v0.7.1 Git tag still declares Python package version `0.7.0`, and PyPI's
-latest `cubesandbox` package was also `0.7.0` when checked. Therefore this
+The v0.7.1 and v0.7.2-rc1 Git tags both declare Python package version `0.7.0`,
+and PyPI's latest `cubesandbox` package was also `0.7.0` when rechecked on
+2026-09-23. Therefore this
 Adapter deliberately keeps `cubesandbox==0.7.0`; there is no published Python
-SDK `0.7.1` to pin. CubeMaster continues to proxy the existing template APIs to
-CubeTemplateCenter, so the upstream HA split does not require an Adapter API
-change.
+SDK `0.7.1` or `0.7.2-rc1` to pin. The RC's SDK changes are source-only and its
+public methods used by this Adapter remain source compatible. This was also
+verified by installing the SDK directly from the signed v0.7.2-rc1 source tag
+in an isolated environment: all 48 Adapter Python tests passed (the optional
+Redis integration test was skipped because no test Redis was configured), and
+the installed command implementation contained the direct Connect API path
+without the removed E2B path. CubeMaster continues to proxy the existing
+template APIs to CubeTemplateCenter, so the upstream HA split does not require
+an Adapter API change.
 
 On 2026-09-12, the Kubernetes acceptance environment was upgraded from v0.7.0
 to v0.7.1 while the Adapter kept the published `cubesandbox==0.7.0` SDK. All
@@ -32,6 +70,14 @@ CubeSandbox workloads became Ready, all eight upstream Helm test groups passed,
 and the Adapter/backend suite passed 30/30 checks. The publication captures and
 the mounted-volume result are recorded in the
 [trusted-execution guide](trusted-execution.md#live-acceptance-evidence).
+
+The same mounted-volume scenario was rerun on 2026-09-23 without upgrading the
+backend. It again passed snapshot creation, rootfs rollback, external-volume
+current-state semantics, clone/remount, referenced-snapshot deletion and all
+six cleanup checks. Before and after the run the cluster had zero active
+sandboxes, zero volumes and the same two pre-existing snapshots. The redacted
+machine-readable result is
+[`snapshot-results-2026-09-23.json`](assets/cubesandbox-upstream/snapshot-results-2026-09-23.json).
 
 ### Mounted-workspace checkpoint semantics
 
@@ -108,7 +154,7 @@ the gate against an older backend will pass the request upstream and fail there.
 
 ## Issues to follow / 建议持续跟进的 Issue
 
-State was re-checked through the GitHub API on 2026-09-12.
+State was re-checked through the GitHub API on 2026-09-23.
 
 | Issue | State / 状态 | Why it matters here / 对本项目的影响 | Current handling / 当前处理 |
 | --- | --- | --- | --- |
@@ -118,7 +164,7 @@ State was re-checked through the GitHub API on 2026-09-12.
 | [#1414 CubeAPI default unauthenticated](https://github.com/TencentCloud/CubeSandbox/issues/1414) | Closed 2026-09-03. | Control-plane authentication remains a deployment boundary even after the upstream issue closes. | Keep `CUBE_API_KEY`, private reachability, TLS/mTLS or OIDC and restrictive NetworkPolicy. |
 | [#1484 Non-positive SDK command timeout](https://github.com/TencentCloud/CubeSandbox/issues/1484) | Closed 2026-08-28; v0.7.1 contains Node/Python source fixes. | The fix has not been published as a Python 0.7.1 package. | Adapter request and profile validation already require positive command timeouts, so this path is not used. |
 | [#1521 Pause/resume stuck edge](https://github.com/TencentCloud/CubeSandbox/issues/1521) | Closed 2026-09-02. | Older deployments could leave leases stuck after failed lifecycle operations. | `/readyz`, status refresh, last-error state and GC visibility remain in place. |
-| [#1565 Concurrent scheduling overcommit](https://github.com/TencentCloud/CubeSandbox/issues/1565) | Still open; last updated 2026-09-03. | Adapter quotas do not replace compute-node admission correctness. | Tenant lease/job quotas limit this broker, but cluster capacity alerts and an upstream resolution are still required. |
+| [#1565 Concurrent scheduling overcommit](https://github.com/TencentCloud/CubeSandbox/issues/1565) | Closed 2026-09-17 after design discussion; the linked consolidation PR [#1595](https://github.com/TencentCloud/CubeSandbox/pull/1595) was closed without merge. | Closing the report is not evidence that concurrent admission or compounded overcommit was changed in a release. | Keep tenant lease/job quotas and node-capacity alerts; load-test the exact scheduler configuration before raising concurrency. |
 
 ## Integration guide follow-up / 集成指南跟进
 

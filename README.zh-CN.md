@@ -252,8 +252,9 @@ Agent 工具结果中的 sandbox_ref
 
 ## 项目包含什么
 
-- 使用固定版本 `cubesandbox==0.7.0` SDK 的带认证 Python Adapter；已完成对
-  CubeSandbox v0.7.1 服务端的上游兼容性审查；
+- 使用固定版本 `cubesandbox==0.7.0` SDK 的带认证 Python Adapter；已在
+  CubeSandbox v0.7.1 稳定版完成兼容性验收，并单独审查 v0.7.2-rc1 的源码/API
+  兼容性与升级风险；
 - 默认拒绝公网的声明式 Profile，并提供持久卷与检查点能力门控；
 - OpenClaw、DSH、Hermes 共用 19 个执行、文件、异步 Job、检查点和可信任务工具，
   并提供 Codex、Claude Code、OpenCode 可使用的 MCP 门面；
@@ -271,6 +272,16 @@ Agent 工具结果中的 sandbox_ref
   输出策略、清理确认和签名 Execution Receipt。
 
 最新版本与 Issue 评估见 [CubeSandbox 上游状态](docs/cubesandbox-upstream.md)。
+
+CubeMaster、TemplateCenter、Cubelet 原生指标，sr1 的 kube-prometheus-stack
+采集配置与 Grafana 面板见
+[CubeSandbox 监控](docs/cubesandbox-monitoring.zh-CN.md)。
+
+办公网 Agent 调用一个或多个生产 CubeSandbox 集群时，请阅读
+[生产网络与多集群边界](docs/multi-cluster-production.zh-CN.md)。当前一个 Adapter
+进程只绑定一个后端，推荐每个生产集群部署一套隔离的 Adapter；网络上必须同时允许
+CubeAPI 与 CubeProxy，只有 CubeAPI 时可能创建成功但无法返回命令、文件、PTY 或
+Job 结果。
 
 ## 前置条件
 
