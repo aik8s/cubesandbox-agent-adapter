@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Any, Callable, Dict, Iterator, Optional, Tuple
 
-from cubesandbox import PtySize, Sandbox, Template, Volume, VolumeMount
+from cubesandbox import PtySize, Sandbox, SandboxNotFoundError, Template, Volume, VolumeMount
 
 from .audit import AuditManager
 from .audited import audited_adapter
@@ -228,12 +228,9 @@ class CubeAdapter:
             )
             existing = self.state.get_lease(existing_ref) if existing_ref else None
             if existing and existing.state != "released":
-                existing.last_used_at = time.time()
-                existing.version += 1
-                self.state.put_lease(existing)
-                result = self._lease_result(existing, reused=True)
-                self._audit(existing, "acquire", request_id, "ok", started, reused=True)
-                return result
+                reused = self._reuse_or_expire_lease(existing, request_id, started)
+                if reused is not None:
+                    return reused
 
             active = [
                 record
@@ -317,6 +314,11 @@ class CubeAdapter:
                 record.state = live_state
                 record.last_used_at = time.time()
                 self.state.put_lease(record)
+            except SandboxNotFoundError:
+                live_state = "expired"
+                record.state = live_state
+                record.last_error = "SandboxNotFoundError"
+                self.state.put_lease(record)
             except Exception as error:
                 record.last_error = type(error).__name__
                 self.state.put_lease(record)
@@ -384,7 +386,10 @@ class CubeAdapter:
                 self.state.put_lease(record)
             else:
                 if record.state != "released":
-                    self._sandbox(record).kill()
+                    try:
+                        self._sandbox(record).kill()
+                    except SandboxNotFoundError:
+                        pass
                     record.state = "released"
                     record.last_used_at = time.time()
                     record.version += 1
@@ -445,10 +450,16 @@ class CubeAdapter:
         started = time.perf_counter()
         try:
             with self._lease_lock(record, profile.max_command_seconds + 60):
-                sandbox = self._sandbox(record)
-                result = sandbox.commands.run(
-                    command, cwd=cwd, timeout=timeout_ms / 1000
-                )
+                try:
+                    sandbox = self._sandbox(record)
+                    sandbox.get_info()
+                    result = sandbox.commands.run(
+                        command, cwd=cwd, timeout=timeout_ms / 1000
+                    )
+                except SandboxNotFoundError as error:
+                    raise AdapterError(
+                        410, "sandbox_expired", "sandbox no longer exists; acquire a new lease"
+                    ) from error
                 self._touch(record, "running")
             stdout, stdout_truncated = _truncate(result.stdout or "")
             stderr, stderr_truncated = _truncate(result.stderr or "")
@@ -2056,6 +2067,54 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
             raise AdapterError(404, "lease_not_found", "lease was not found or has expired")
         return record
 
+    def _reuse_or_expire_lease(
+        self, existing: LeaseRecord, request_id: str, started: float
+    ) -> Optional[Dict[str, Any]]:
+        with self._lease_lock(existing):
+            record = self.state.get_lease(existing.lease_ref)
+            if record is None or record.state == "released":
+                return None
+            try:
+                info = self._sandbox(record).get_info()
+            except SandboxNotFoundError:
+                if self.state.list_checkpoints(record.lease_ref):
+                    raise AdapterError(
+                        409,
+                        "expired_lease_has_checkpoints",
+                        "sandbox expired with checkpoints; operator cleanup is required",
+                    ) from None
+                self._destroy_owned_volume(record)
+                self.state.delete_lease(record)
+                with self._handles_lock:
+                    stale = self._handles.pop(record.lease_ref, None)
+                if stale is not None:
+                    try:
+                        stale.close()
+                    except Exception:
+                        pass
+                self._audit(record, "lease_expired", request_id, "ok", started)
+                return None
+            except Exception as error:
+                raise AdapterError(
+                    409,
+                    "sandbox_state_unknown",
+                    "existing sandbox status could not be confirmed",
+                ) from error
+            live_state = str(info.get("state") or "")
+            if live_state not in {"running", "paused"}:
+                raise AdapterError(
+                    409,
+                    "sandbox_state_unknown",
+                    "existing sandbox is not in a reusable state",
+                )
+            record.state = live_state
+            record.last_used_at = time.time()
+            record.version += 1
+            self.state.put_lease(record)
+            result = self._lease_result(record, reused=True)
+            self._audit(record, "acquire", request_id, "ok", started, reused=True)
+            return result
+
     def _sandbox(self, record: LeaseRecord) -> Any:
         with self._handles_lock:
             sandbox = self._handles.get(record.lease_ref)
@@ -2327,8 +2386,10 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
                         continue
                     if self.audit.journal is not None:
                         self._audit(latest, 'gc_release_intent', uuid.uuid4().hex[:16], 'pending', started)
-                    sandbox = self._sandbox(latest)
-                    sandbox.kill()
+                    try:
+                        self._sandbox(latest).kill()
+                    except SandboxNotFoundError:
+                        pass
                     latest.state = "released"
                     self._destroy_owned_volume(latest)
                     self.state.delete_lease(latest)

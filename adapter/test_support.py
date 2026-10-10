@@ -6,6 +6,8 @@ import threading
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
+from cubesandbox import SandboxNotFoundError
+
 
 @dataclass
 class FakeResult:
@@ -77,6 +79,8 @@ class FakeCommands:
         self.last_command = ""
 
     def run(self, command, **_kwargs):
+        if self.sandbox.killed:
+            raise SandboxNotFoundError("sandbox no longer exists")
         self.last_command = command
         if "echo $!" in command:
             return FakeResult(stdout="4321\n")
@@ -178,12 +182,16 @@ class FakeSandbox:
         self.paused = wait
 
     def kill(self):
+        if self.killed:
+            raise SandboxNotFoundError("sandbox no longer exists")
         self.killed = True
 
     def close(self):
         self.closed = True
 
     def get_info(self):
+        if self.killed:
+            raise SandboxNotFoundError("sandbox no longer exists")
         return {"state": "paused" if self.paused else "running"}
 
     def create_snapshot(self, name=None):

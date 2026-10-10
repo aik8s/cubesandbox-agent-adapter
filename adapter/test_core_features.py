@@ -298,6 +298,83 @@ profiles:
         )
         self.assertTrue(other["lease_ref"].startswith("lease_"))
 
+    def test_acquire_replaces_backend_expired_sandbox_without_uncertain_audit(self):
+        adapter = self.adapter()
+        first = self.acquire(adapter, "expiring-session")
+        expired = FakeSandbox.created[0]
+        expired.killed = True
+
+        second = self.acquire(adapter, "expiring-session")
+
+        self.assertFalse(second["reused"])
+        self.assertNotEqual(second["lease_ref"], first["lease_ref"])
+        self.assertEqual(len(FakeSandbox.created), 2)
+        self.assertTrue(expired.closed)
+        self.assertIsNone(adapter.state.get_lease(first["lease_ref"]))
+        self.assertEqual(
+            adapter.exec(second["lease_ref"], {"command": "true"})["exit_code"], 0
+        )
+        self.assertEqual(adapter.audit.journal.pending_operations(), [])
+
+    def test_acquire_does_not_replace_sandbox_on_unknown_backend_error(self):
+        adapter = self.adapter()
+        first = self.acquire(adapter, "uncertain-session")
+        sandbox = FakeSandbox.created[0]
+
+        def failed_probe():
+            raise RuntimeError("temporary API failure")
+
+        sandbox.get_info = failed_probe
+        with self.assertRaises(AdapterError) as failed:
+            self.acquire(adapter, "uncertain-session")
+        self.assertEqual(failed.exception.code, "sandbox_state_unknown")
+        self.assertEqual(len(FakeSandbox.created), 1)
+        self.assertIsNotNone(adapter.state.get_lease(first["lease_ref"]))
+        self.assertEqual(adapter.audit.journal.pending_operations(), [])
+
+    def test_expired_sandbox_status_and_exec_do_not_block_audit(self):
+        adapter = self.adapter()
+        lease = self.acquire(adapter, "expired-exec")["lease_ref"]
+        FakeSandbox.created[0].killed = True
+
+        status = adapter.lease_status(lease)
+        self.assertEqual(status["state"], "expired")
+        with self.assertRaises(AdapterError) as failed:
+            adapter.exec(lease, {"command": "true"})
+        self.assertEqual(failed.exception.code, "sandbox_expired")
+        self.assertEqual(adapter.audit.journal.pending_operations(), [])
+
+    def test_expired_sandbox_with_checkpoints_is_not_silently_discarded(self):
+        profiles = self.write_profiles("profiles:\n  checkpoint-code:\n    checkpoints_enabled: true\n")
+        adapter = self.adapter(self.config(profiles_file=profiles))
+        first = self.acquire(adapter, "checkpoint-session", profile="checkpoint-code")
+        checkpoint = adapter.checkpoint_create(first["lease_ref"], {"name": "saved"})
+        FakeSandbox.created[0].killed = True
+
+        with self.assertRaises(AdapterError) as failed:
+            self.acquire(adapter, "checkpoint-session", profile="checkpoint-code")
+        self.assertEqual(failed.exception.code, "expired_lease_has_checkpoints")
+        self.assertEqual(len(FakeSandbox.created), 1)
+        self.assertIsNotNone(adapter.state.get_lease(first["lease_ref"]))
+        self.assertIsNotNone(adapter.state.get_checkpoint(checkpoint["checkpoint_ref"]))
+        self.assertEqual(adapter.audit.journal.pending_operations(), [])
+
+    def test_release_and_gc_treat_expired_sandbox_as_already_deleted(self):
+        adapter = self.adapter()
+        released = self.acquire(adapter, "release-expired")["lease_ref"]
+        FakeSandbox.created[0].killed = True
+        self.assertEqual(adapter.release(released, {"action": "kill"})["action"], "kill")
+        self.assertIsNone(adapter.state.get_lease(released))
+
+        collected = self.acquire(adapter, "gc-expired")["lease_ref"]
+        FakeSandbox.created[1].killed = True
+        record = adapter.state.get_lease(collected)
+        record.last_used_at = time.time() - 7200
+        adapter.state.put_lease(record)
+        self.assertEqual(adapter.force_gc(), {"collected": 1, "failed": 0})
+        self.assertIsNone(adapter.state.get_lease(collected))
+        self.assertEqual(adapter.audit.journal.pending_operations(), [])
+
     def test_durable_state_reconnects_without_killing_sandbox(self):
         state = DurableMemoryState()
         first = self.adapter(state=state)

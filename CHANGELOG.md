@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Fixed
+
+- Revalidate the backend sandbox before reusing a session lease. If the sandbox
+  expired, create a fresh one instead of returning a dead lease; preserve any
+  checkpoint-bearing lease for explicit cleanup. Status and direct execution
+  now report a confirmed backend expiration without leaving an uncertain audit
+  operation; release and garbage collection treat a confirmed missing sandbox
+  as already deleted.
+
 ### Added
 
 - OpenCode V1/V2 MCP configuration generation, a one-command installer with a
@@ -24,12 +33,13 @@
 
 - Reviewed CubeSandbox v0.7.1 backend compatibility while retaining the latest
   published `cubesandbox==0.7.0` Python SDK pin.
-- Reviewed the v0.7.2-rc1 pre-release, including source-only Python SDK changes,
-  snapshot fixes, S3lvol work, OpenCode guidance and the Kubernetes
-  `cubeNode.hostNetwork: true` default; stable deployments remain on v0.7.1.
-- Verified the Adapter against the Python SDK installed from the signed
-  v0.7.2-rc1 source tag: 48 Python tests passed, with only the unconfigured
-  optional Redis integration test skipped.
+- Reviewed the stable CubeSandbox v0.7.2 release, including source-only Python
+  SDK changes, snapshot fixes, S3lvol work, OpenCode guidance and the Kubernetes
+  `cubeNode.hostNetwork: true` default. The sr1 upgrade and narrow SDK canaries
+  passed; full Adapter/client acceptance on this backend is still pending.
+- Verified the Adapter against the Python SDK installed from the v0.7.2 source
+  tag: 47 Python tests passed, with only the unconfigured optional Redis
+  integration test skipped.
 - Updated the mounted-workspace checkpoint gate and documentation for v0.7.1
   external-reference restore semantics; explicit operator opt-in remains the
   safe default.
