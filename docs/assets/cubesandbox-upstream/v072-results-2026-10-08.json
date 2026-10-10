@@ -1,0 +1,57 @@
+{
+  "date": "2026-10-08",
+  "cluster": "sr1 (test)",
+  "backend_before": "v0.7.1",
+  "backend_after": "v0.7.2",
+  "helm_revision_after": 7,
+  "sdk_source": "v0.7.2 tag (Python package metadata remains 0.7.0)",
+  "pod_network_preserved": true,
+  "storage_recovery": {
+    "mysql_pvc_before_gib": 10,
+    "mysql_pvc_after_gib": 12,
+    "old_binlogs_purged_with_mysql_sql": true,
+    "binlog_retention_seconds_after": 604800,
+    "database_backup_taken_before_upgrade": true
+  },
+  "tests": {
+    "adapter_python": {"passed": 47, "skipped_optional_redis": 1},
+    "upstream_sdk_non_e2e": {"passed": 269, "deselected_e2e": 4},
+    "helm_v072": {"groups_passed": 8},
+    "lifecycle_v071": {
+      "rounds": 5,
+      "create_ms": [174.99, 149.89, 355.65, 130.06, 138.04],
+      "mean_create_ms": 189.73,
+      "first_command_passed": 5,
+      "pause_resume_command_passed": true,
+      "all_deleted": true
+    },
+    "lifecycle_v072": {
+      "rounds": 5,
+      "create_ms": [178.99, 116.74, 126.16, 129.94, 132.41],
+      "mean_create_ms": 136.85,
+      "first_command_passed": 5,
+      "pause_resume_command_passed": true,
+      "all_deleted": true
+    },
+    "snapshot_v072": {
+      "snapshot_create_ms": 121.15,
+      "listed": true,
+      "rollback_ms": 154.12,
+      "rollback_restored_rootfs": true,
+      "create_from_snapshot_ms": 171.39,
+      "clone_restored_rootfs": true,
+      "created_snapshot_deleted": true
+    }
+  },
+  "cleanup": {
+    "new_sandboxes_remaining": 0,
+    "new_snapshots_remaining": 0,
+    "temporary_image_probe_deleted": true
+  },
+  "limitations": [
+    "The lifecycle canary used an existing READY template built before v0.7.2; it does not validate a newly captured v0.7.2 AppSnapshot template.",
+    "No affected snapshot artifact was available to reproduce issue 1893 deterministically.",
+    "No deliberate guest-agent failure, resume storage fault, or shim-log rotation was injected for issues 1890, 1847, or 1896.",
+    "Five create rounds per backend are a functional canary, not a performance benchmark or SLA."
+  ]
+}

@@ -253,8 +253,9 @@ Agent 工具结果中的 sandbox_ref
 ## 项目包含什么
 
 - 使用固定版本 `cubesandbox==0.7.0` SDK 的带认证 Python Adapter；已在
-  CubeSandbox v0.7.1 稳定版完成兼容性验收，并单独审查 v0.7.2-rc1 的源码/API
-  兼容性与升级风险；
+  CubeSandbox v0.7.1 完成完整 Adapter 验收；
+  [v0.7.2 的 sr1 升级及 SDK 生命周期/快照实测](docs/cubesandbox-upstream.md)已通过，
+  但完整的 Adapter/客户端实集群验收尚未重跑；
 - 默认拒绝公网的声明式 Profile，并提供持久卷与检查点能力门控；
 - OpenClaw、DSH、Hermes 共用 19 个执行、文件、异步 Job、检查点和可信任务工具，
   并提供 Codex、Claude Code、OpenCode 可使用的 MCP 门面；

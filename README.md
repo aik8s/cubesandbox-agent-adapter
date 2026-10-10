@@ -267,8 +267,9 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
 ## What is included
 
 - authenticated Python Adapter using the pinned `cubesandbox==0.7.0` SDK, with
-  stable backend compatibility validated on CubeSandbox v0.7.1 and the
-  v0.7.2-rc1 source/API and upgrade risks reviewed separately;
+  full Adapter acceptance on CubeSandbox v0.7.1; the
+  [v0.7.2 sr1 upgrade and SDK lifecycle/snapshot canaries](docs/cubesandbox-upstream.md)
+  passed, while full live Adapter/client acceptance remains pending;
 - fail-closed declarative profiles with persistent-volume and checkpoint gates;
 - OpenClaw, DSH and Hermes plugins with 19 compatible execution, file, async
   job, checkpoint, and trusted-task tools, plus an MCP facade for Codex,
