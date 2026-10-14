@@ -1,0 +1,203 @@
+{
+  "checks": [
+    {
+      "evidence": {
+        "version": "0.5.0"
+      },
+      "name": "service-health",
+      "section": "Runtime",
+      "summary": "Acceptance Adapter is healthy."
+    },
+    {
+      "evidence": {
+        "templates": [
+          "expiring-plan",
+          "invalid-output",
+          "trusted-auto",
+          "trusted-cancel",
+          "trusted-smoke"
+        ]
+      },
+      "name": "template-catalog",
+      "section": "Runtime",
+      "summary": "Operator-owned task catalog loaded with signed template digests."
+    },
+    {
+      "evidence": {
+        "error_code": "action_denied",
+        "http_status": 403
+      },
+      "name": "raw-exec-denied",
+      "section": "Trust boundary",
+      "summary": "Task-only identity cannot acquire a raw execution lease."
+    },
+    {
+      "evidence": {
+        "error_code": "invalid_parameters",
+        "http_status": 400
+      },
+      "name": "input-schema-denied",
+      "section": "Trust boundary",
+      "summary": "JSON Schema rejects parameters outside the operator contract."
+    },
+    {
+      "evidence": {
+        "error_code": "self_approval_denied",
+        "http_status": 403
+      },
+      "name": "self-approval-denied",
+      "section": "Trust boundary",
+      "summary": "A dual-role identity still cannot approve its own plan."
+    },
+    {
+      "evidence": {
+        "command_sha256": "61bbe5ec16b27935",
+        "parameters_sha256": "a203f85dc0fa97f4",
+        "plan_ref": "plan#b217d021cf33",
+        "template_sha256": "e9d2fb74d4a02fd1"
+      },
+      "name": "approval-review",
+      "section": "Plan and approval",
+      "summary": "Independent approver sees parameters bound to immutable hashes."
+    },
+    {
+      "evidence": {
+        "state": "approved"
+      },
+      "name": "independent-approval",
+      "section": "Plan and approval",
+      "summary": "Independent approver authorizes the exact reviewed plan."
+    },
+    {
+      "evidence": {
+        "task_ref": "task#aac22a63d013"
+      },
+      "name": "idempotent-submit",
+      "section": "Plan and approval",
+      "summary": "Repeated submission returns the original task instead of executing twice."
+    },
+    {
+      "evidence": {
+        "error_code": "receipt_not_ready",
+        "http_status": 409
+      },
+      "name": "receipt-gated",
+      "section": "Execution",
+      "summary": "Receipt is unavailable until execution and sandbox cleanup finish."
+    },
+    {
+      "evidence": {
+        "state": "running",
+        "task_ref": "task#aac22a63d013"
+      },
+      "name": "task-started",
+      "section": "Execution",
+      "summary": "Task was scheduled into a real CubeSandbox MicroVM."
+    },
+    {
+      "evidence": {
+        "metrics": {
+          "epochs": 25,
+          "run_id": "acceptance-real-microvm",
+          "score": 0.98,
+          "status": "ok"
+        },
+        "model_sha256": "494febf82306bed2",
+        "sandbox_ref": "sandbox#fd38e4e001f4"
+      },
+      "name": "output-policy",
+      "section": "Execution",
+      "summary": "Allowlisted metrics are returned while model content remains digest-only."
+    },
+    {
+      "evidence": {
+        "cleanup": "verified",
+        "state": "succeeded"
+      },
+      "name": "cleanup-verified",
+      "section": "Execution",
+      "summary": "The MicroVM was killed before a final receipt was issued."
+    },
+    {
+      "evidence": {
+        "algorithm": "HS256",
+        "cleanup": "verified",
+        "key_id": "hmac-5353350950b8",
+        "signature_prefix": "oXlPLpJETsS_ZAhvtG"
+      },
+      "name": "receipt-signature",
+      "section": "Signed receipt",
+      "summary": "Canonical receipt signature verifies offline and includes cleanup evidence."
+    },
+    {
+      "evidence": {
+        "task_ref": "task#aac22a63d013"
+      },
+      "name": "receipt-get-post",
+      "section": "Signed receipt",
+      "summary": "GET and POST receipt transports return the same signed evidence."
+    },
+    {
+      "evidence": {
+        "error_code": "plan_not_approved",
+        "state": "denied"
+      },
+      "name": "denied-plan-blocked",
+      "section": "Failure handling",
+      "summary": "A denied plan cannot be submitted."
+    },
+    {
+      "evidence": {
+        "error_code": "plan_expired",
+        "http_status": 409
+      },
+      "name": "expired-plan-blocked",
+      "section": "Failure handling",
+      "summary": "Expired plans cannot be approved or replayed."
+    },
+    {
+      "evidence": {
+        "cleanup": "verified",
+        "state": "output_validation_failed"
+      },
+      "name": "invalid-output-blocked",
+      "section": "Failure handling",
+      "summary": "Invalid task output fails closed, but still produces cleanup evidence."
+    },
+    {
+      "evidence": {
+        "cleanup": "verified",
+        "state": "cancelled"
+      },
+      "name": "cancel-and-cleanup",
+      "section": "Failure handling",
+      "summary": "Cancellation terminates the job and verifies MicroVM cleanup."
+    },
+    {
+      "evidence": {
+        "plan_state": "ready",
+        "result_state": "succeeded"
+      },
+      "name": "operator-auto-task",
+      "section": "Failure handling",
+      "summary": "An explicitly configured no-approval template follows its declared policy."
+    }
+  ],
+  "environment": "CubeSandbox v0.7.3 · Kubernetes acceptance cluster",
+  "failed": 0,
+  "generated_at": "2026-10-14T09:26:39+00:00",
+  "passed": 19,
+  "receipt": {
+    "algorithm": "HS256",
+    "cleanup": "verified",
+    "command_sha256": "61bbe5ec16b2793552ac",
+    "key_id": "hmac-5353350950b8",
+    "parameters_sha256": "a203f85dc0fa97f4d5b9",
+    "signature_prefix": "oXlPLpJETsS_ZAhvtGsz",
+    "state": "succeeded",
+    "task_ref": "task#aac22a63d013",
+    "template_sha256": "e9d2fb74d4a02fd18406"
+  },
+  "result": "PASS",
+  "title": "CubeSandbox Trusted Execution Acceptance"
+}

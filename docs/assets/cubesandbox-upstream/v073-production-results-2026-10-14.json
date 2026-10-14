@@ -1,0 +1,51 @@
+{
+  "backend": "v0.7.3",
+  "checks": {
+    "create-and-execute": "PASS (3 rounds)",
+    "deleted-snapshot-status": "PASS",
+    "mcp-shape-validation": "PASS",
+    "pause-metadata-resume": "PASS",
+    "snapshot-restore-clone": "PASS",
+    "snapshot-rollback": "PASS",
+    "template-pagination": "OBSERVED (E2B facade remains unpaged; verify CLI separately)"
+  },
+  "cleanup": {
+    "complete": true,
+    "errors": 0
+  },
+  "deleted_snapshot_http_status": 404,
+  "environment": "production",
+  "invalid_mcp_http_status": 400,
+  "pause_client_ms": 138.28,
+  "paused_metadata_retained": true,
+  "paused_template_retained": true,
+  "result": "PASS",
+  "sdk_package_version": "0.7.0",
+  "template_page_size": 15,
+  "timestamp": "2026-10-14T09:32:08.150727+00:00",
+  "timings": {
+    "median_ms": {
+      "create_ms": 317.96,
+      "delete_ms": 3126.6,
+      "first_command_ms": 103.04
+    },
+    "samples": [
+      {
+        "create_ms": 317.96,
+        "delete_ms": 3127.06,
+        "first_command_ms": 103.04
+      },
+      {
+        "create_ms": 543.88,
+        "delete_ms": 3122.2,
+        "first_command_ms": 121.98
+      },
+      {
+        "create_ms": 152.32,
+        "delete_ms": 3126.6,
+        "first_command_ms": 77.89
+      }
+    ],
+    "scope": "client-observed API latency including transport; not a concurrency benchmark"
+  }
+}

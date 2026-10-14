@@ -29,6 +29,8 @@ def run(sandbox: Sandbox, command: str) -> str:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=str)
+    parser.add_argument("--backend", default="CubeSandbox v0.7.1")
+    parser.add_argument("--restore-with-mounts", action="store_true")
     args = parser.parse_args()
     template = os.environ.get("CUBE_TEMPLATE_ID", "agent-code")
     volume = None
@@ -36,6 +38,7 @@ def main() -> None:
     writer = None
     verifier = None
     clone = None
+    restored = None
     snapshot_id = ""
     snapshot_deleted = False
     cleanup: dict[str, bool] = {
@@ -46,6 +49,8 @@ def main() -> None:
         "snapshot_deleted": False,
         "volume_destroyed": False,
     }
+    if args.restore_with_mounts:
+        cleanup["restored_killed"] = False
     try:
         volume = Volume.create(f"v071-acceptance-{uuid.uuid4().hex[:16]}", driver="s3")
         source = Sandbox.create(
@@ -96,6 +101,21 @@ def main() -> None:
         if volume_after_rollback != "volume-after":
             raise AssertionError("mounted data unexpectedly rolled back with rootfs")
 
+        if args.restore_with_mounts:
+            restored = Sandbox.create(
+                template=snapshot_id,
+                timeout=300,
+                allow_internet_access=False,
+                volume_mounts={"/workspace": volume},
+            )
+            if run(restored, "cat /tmp/v071-root") != "root-before":
+                raise AssertionError("snapshot restore did not inherit rootfs")
+            if run(restored, "cat /workspace/v071-created-after") != "volume-after":
+                raise AssertionError("re-sent mount did not preserve current volume data")
+            restored.kill()
+            restored = None
+            cleanup["restored_killed"] = True
+
         clones = source.clone(n=1)
         if len(clones) != 1:
             raise AssertionError("clone did not return exactly one sandbox")
@@ -115,7 +135,7 @@ def main() -> None:
 
         result: dict[str, Any] = {
             "result": "PASS",
-            "backend": "CubeSandbox v0.7.1",
+            "backend": args.backend,
             "sdk": version("cubesandbox"),
             "checks": {
                 "mounted_snapshot": "created",
@@ -126,7 +146,12 @@ def main() -> None:
                 "snapshot_delete_while_referenced": "accepted",
             },
         }
+        if args.restore_with_mounts:
+            result["checks"]["snapshot_restore_with_resent_mounts"] = "accepted-current-data"
     finally:
+        if restored is not None:
+            restored.kill()
+            cleanup["restored_killed"] = True
         if verifier is not None:
             verifier.kill()
             cleanup["verifier_killed"] = True

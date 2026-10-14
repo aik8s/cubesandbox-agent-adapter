@@ -1,8 +1,114 @@
 # CubeSandbox upstream status / 上游状态
 
-Checked on 2026-10-08 / 核对日期：2026-10-08.
+Checked on 2026-10-14 / 核对日期：2026-10-14.
 
-## Release channels / 发布通道
+## v0.7.3：升级和实测（2026-10-14）
+
+[v0.7.3](https://github.com/TencentCloud/CubeSandbox/releases/tag/v0.7.3)
+于 2026-10-12 发布。本次测试集群和生产集群均从 v0.7.2 升到 v0.7.3，
+Helm revision 分别为 9 和 18。生产三个计算节点均健康、已恢复调度。
+MySQL、Redis、MinIO、现有模板和 Adapter 审计数据保留，没有清空重装。
+
+### 新特性和兼容性
+
+- 新增沙箱内 MCP 网关：SDK 创建沙箱时可启动多个 stdio MCP server，
+  通过一个 HTTP 入口调用聚合工具。需要包含 `mcp-gateway` 的模板，并暴露
+  `50005` 端口；把程序写入普通代码沙箱后做快照，不会自动增加暴露端口。
+  [官方 MCP 文档](https://github.com/TencentCloud/CubeSandbox/blob/v0.7.3/docs/guide/mcp-gateway.md)
+  说明这是预览功能。同一沙箱中的 server 默认以 root 运行、共享一个信任域，
+  不能代替 Adapter 的权限、审批和持久审计。
+- 修复暂停后丢失元数据、模板信息和挂载信息；接受快照恢复时重新发送卷挂载。
+  已删除快照创建沙箱返回 `404`，不再返回 `500`。
+- 网络修复包括端口映射键加入 sandbox IP、网卡复用后的连接问题和连接回收。
+  克隆资源选择、shim 存活时的资源回收和模板列表查询也有修复。
+- 模板分页适用于 CubeMaster `/cube/template` 和 `cubemastercli`。
+  E2B `/templates?limit=1` 仍返回全量列表；不能把两套接口混用。
+- [PyPI SDK 0.7.3](https://pypi.org/project/cubesandbox/0.7.3/) 也已在
+  2026-10-12 发布。v0.7.3 Git tag 中的 `pyproject.toml` 仍写 `0.7.0`，
+  因此记录区分源码 SDK、已发布包和后端版本。线上 Adapter 本次保留原镜像及
+  `cubesandbox==0.7.0`，实际租约、执行、文件和异步任务回归通过；新包单独验证。
+  生产审计最终核对为：未完成操作 0、待投递记录 0、阻断状态 0。
+
+### 部署过程
+
+19 个组件镜像通过中转机 Registry → Registry 复制，没有在本地拉镜像层。
+固定 linux/amd64 manifest，核对源/目标 config 和 layer digest 后，经镜像服务
+同步到生产。生产 WebUI 派生镜像保留原有内部模板镜像地址，不恢复外网地址。
+
+升级前保存 Helm 配置，并在 MySQL 持久卷保留逻辑备份。先升级 CubeOps，
+再更新控制面；计算节点在 CubeOps 内隔离超过 60 秒，并确认沙箱库存为空。
+生产临时使用 OnDelete，逐个更新 bootstrap、installer 和 cube-node，确认就绪
+后解除隔离，最终恢复原 RollingUpdate 策略。节点标签、存储类、宿主机内核和
+`cubeNode.hostNetwork: false` 均未改动。
+
+生产第一次预检查失败是 Helm `--reuse-values` 把已置空的默认 cube 标签选择器
+重新渲染成空字符串；不是 CPU 不足。使用保存的完整配置配合 `--reset-values`
+重新渲染后，只保留原有的节点选择条件，预检查通过。
+按照[官方升级指南](https://github.com/TencentCloud/CubeSandbox/blob/v0.7.3/docs/guide/kubernetes/upgrade.md)，
+Pod 网络模式必须先排空沙箱，不能依靠 Pod 重建保留原沙箱网络。
+
+### 实测结果
+
+| 检查 | 测试集群 | 生产集群 |
+| --- | --- | --- |
+| 创建、执行、删除 | 5 轮通过 | 3 轮通过 |
+| 暂停元数据、恢复文件 | 通过 | 通过 |
+| Snapshot、Rollback、Restore、Clone 和根文件隔离 | 通过 | 通过 |
+| S3 外部卷当前数据、克隆共享、重新发送挂载恢复 | 7 项通过，7 项清理完成 | 同左 |
+| 已删除快照 / 非法 MCP 参数 | 404 / 400 | 404 / 400 |
+| CLI 模板分页 | limit=1 返回 1 条 | limit=1、offset=1 返回 1 条 |
+| MCP 网关和工具调用 | 新建离线模板通过 | 本轮未部署 MCP 模板 |
+| Adapter 可信任务 | 19 项通过 | 租约、执行、文件、异步任务、释放通过 |
+
+测试集群升级前后采用同一组 canary：暂停元数据从丢失变为保留；
+已删除快照返回码从 500 变为 404；非法 MCP 参数从被忽略变为 400。
+创建 API 的 5 轮中位数为 146.33 ms，删除为 130.53 ms，首条命令为
+88.44 ms；均是经过本地端口转发的客户端耗时，测试配置不是官方基准。
+MCP 用两个无需外网的 Echo server 验证同名工具聚合为 `echo` 和 `beta_echo`，
+两个工具均实际返回预期标记。缺少网关令牌返回 401，缺少代理流量令牌返回 403。
+新建 MCP 模板及相关测试沙箱已删除，原有模板未改动。
+
+PVM 宿主机内核更新、S3lvol 热升级和大规模跨节点性能不在本轮运行配置中。
+本轮没有重新运行所有 Agent 客户端 TUI，也没有重做 Claude 验证。
+
+源码 SDK 的 288 项非 E2E 测试通过；Adapter 本地 53 项测试中 52 项通过、
+1 项可选 Redis 集成跳过，Hermes 2 项、验收解析 3 项、可信执行 5 项及
+OpenClaw/DSH 插件、安装脚本、Lint、Helm 检查通过。
+已发布 SDK 0.7.3 也通过同一组 288 项 SDK 测试、53 项 Adapter 测试
+（同样跳过可选 Redis 集成）及 5 轮真实生命周期/快照回归；没有因此替换线上
+Adapter 镜像或发布新的 Adapter 版本。
+
+### 证据和复现
+
+- [升级前基线](assets/cubesandbox-upstream/v072-before-v073-2026-10-14.json)、
+  [测试集群结果](assets/cubesandbox-upstream/v073-sr1-results-2026-10-14.json)、
+  [生产结果](assets/cubesandbox-upstream/v073-production-results-2026-10-14.json)。
+- [测试卷快照结果](assets/cubesandbox-upstream/v073-volume-results-2026-10-14.json)、
+  [生产卷快照结果](assets/cubesandbox-upstream/v073-production-volume-results-2026-10-14.json)。
+- [MCP 结果](assets/cubesandbox-upstream/v073-mcp-results-2026-10-14.json)、
+  [可信任务 19 项验收](assets/cubesandbox-upstream/v073-trusted-acceptance/results.json)、
+  [生产 Adapter 结果](assets/cubesandbox-upstream/v073-production-adapter-results-2026-10-14.json)、
+  [已发布 SDK 0.7.3 实测](assets/cubesandbox-upstream/v073-published-sdk-results-2026-10-14.json)。
+
+真实控制台版本页，Light 模式，内部标识已遮盖：
+
+![v0.7.3 控制台版本矩阵](assets/cubesandbox-upstream/v073-webui-versions-light.png)
+
+快照、MCP 和生产 Adapter 的真实结果报告，Light 模式：
+
+![v0.7.3 快照、MCP 与生产 Adapter 实测](assets/cubesandbox-upstream/v073-snapshot-mcp-light.png)
+
+可信任务验收报告，Light 模式；数据来自实际 Adapter 请求：
+
+![v0.7.3 可信任务验收](assets/cubesandbox-upstream/v073-trusted-tasks-light.png)
+
+通用回归脚本为 `tests/acceptance/cubesandbox_release_smoke.py`，使用 SDK 的
+`CUBE_API_URL`、`CUBE_PROXY_NODE_IP`、`CUBE_PROXY_PORT_HTTP`、`CUBE_TEMPLATE_ID`
+连接变量。卷测试增加 `--backend` 和 `--restore-with-mounts`，保留旧版本默认行为。
+MCP 脚本 `tests/acceptance/cubesandbox_mcp_gateway_smoke.py` 要求传入预先构建、
+暴露 50005 的离线模板，搭配 `mcp_echo_server.py`；不会在执行时下载 MCP server。
+
+## Historical release channels / 历史发布通道（2026-10-08）
 
 [CubeSandbox v0.7.2](https://github.com/TencentCloud/CubeSandbox/releases/tag/v0.7.2)
 is the latest stable release as of 2026-10-08. It was published on 2026-09-24;

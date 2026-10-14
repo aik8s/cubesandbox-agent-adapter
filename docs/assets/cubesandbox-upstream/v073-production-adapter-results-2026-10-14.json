@@ -1,0 +1,16 @@
+{
+  "backend": "v0.7.3",
+  "environment": "production",
+  "adapter_sdk": "published cubesandbox==0.7.0",
+  "result": "PASS",
+  "checks": [
+    "lease-acquire",
+    "exec",
+    "file-write-read",
+    "async-job-status-output",
+    "kill-release"
+  ],
+  "audit_blocked": 0.0,
+  "audit_pending_deliveries": 0.0,
+  "audit_incomplete_operations": 0.0
+}

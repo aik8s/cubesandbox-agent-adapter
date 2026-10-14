@@ -1,0 +1,22 @@
+{
+  "backend": "v0.7.3",
+  "checks": {
+    "authentication": "PASS",
+    "sdk-mcp-start": "PASS",
+    "template-prepare": "PASS",
+    "tool-aggregation-and-call": "PASS"
+  },
+  "cleanup": {
+    "complete": true,
+    "errors": 0
+  },
+  "result": "PASS",
+  "tools": [
+    "beta_echo",
+    "echo"
+  ],
+  "unauthenticated_status": {
+    "missing_gateway_token": 401,
+    "missing_traffic_token": 403
+  }
+}

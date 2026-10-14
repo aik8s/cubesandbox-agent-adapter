@@ -1,0 +1,26 @@
+{
+  "date": "2026-10-14",
+  "backend": "v0.7.3",
+  "source_revision": "4411c96ba8658a959de34693f54f4918db2a432f",
+  "source_sdk_declared_version": "0.7.0",
+  "published_sdk_tested_version": "0.7.3",
+  "published_wheel_sha256": "811ba07d97b2756f68299213881f93f04bc4e61f89bf60ed870a923807a9d087",
+  "source_sdk_tests": {"passed": 288, "e2e_deselected": 4},
+  "published_sdk_tests": {"passed": 288, "e2e_deselected": 4},
+  "adapter_tests_original_and_published_sdk": {"run": 53, "passed": 52, "optional_redis_skipped": 1},
+  "hermes_tests": 2,
+  "acceptance_runner_tests": 3,
+  "trusted_execution_tests": 5,
+  "plugin_and_installer_checks": "PASS",
+  "lint_and_helm_checks": "PASS",
+  "deployment": {
+    "acceptance": {"helm_revision": 9, "compute_nodes_ready": 1},
+    "production": {"helm_revision": 18, "compute_nodes_ready": 3},
+    "host_network": false,
+    "pvm_host_kernel_enabled": false,
+    "production_node_labels_changed": false,
+    "adapter_image_changed": false,
+    "test_sandboxes_remaining": 0
+  },
+  "result": "PASS"
+}

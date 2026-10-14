@@ -268,7 +268,7 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
 
 - authenticated Python Adapter using the pinned `cubesandbox==0.7.0` SDK, with
   full Adapter acceptance on CubeSandbox v0.7.1; the
-  [v0.7.2 sr1 upgrade and SDK lifecycle/snapshot canaries](docs/cubesandbox-upstream.md)
+  [v0.7.3 test/production upgrades, snapshot/MCP canaries and Light screenshots](docs/cubesandbox-upstream.md)
   passed, while full live Adapter/client acceptance remains pending;
 - fail-closed declarative profiles with persistent-volume and checkpoint gates;
 - OpenClaw, DSH and Hermes plugins with 19 compatible execution, file, async
