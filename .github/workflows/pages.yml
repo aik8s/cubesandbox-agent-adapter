@@ -39,7 +39,7 @@ jobs:
           node-version: '22'
       - run: node --check site/app.js
       - run: node scripts/build-site.mjs
-      - uses: actions/upload-pages-artifact@v4
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: dist/site
   deploy:
