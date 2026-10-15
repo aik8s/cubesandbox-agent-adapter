@@ -4,6 +4,16 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Existing immutable GHCR image to verify without rebuilding
+        required: true
+        type: string
+      version:
+        description: Expected Adapter version
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -11,7 +21,10 @@ permissions:
 
 jobs:
   image:
+    if: github.event_name != 'workflow_dispatch'
     runs-on: ubuntu-latest
+    outputs:
+      image: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v7
       - uses: docker/setup-qemu-action@v4
@@ -39,12 +52,34 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           provenance: mode=max
           sbom: true
-      - name: Verify published multi-architecture runtime
+  verify:
+    needs: image
+    if: always() && (needs.image.result == 'success' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/checkout@v7
+      - if: matrix.platform == 'linux/arm64'
+        uses: docker/setup-qemu-action@v4
+      - name: Verify immutable published runtime
         env:
-          RELEASE_IMAGE: ghcr.io/${{ github.repository }}@${{ steps.build.outputs.digest }}
+          RELEASE_IMAGE: ${{ inputs.image || needs.image.outputs.image }}
+          EXPECTED_VERSION: ${{ inputs.version }}
+          RELEASE_REPOSITORY: ghcr.io/${{ github.repository }}
+          RELEASE_PLATFORM: ${{ matrix.platform }}
         run: |
-          for platform in linux/amd64 linux/arm64; do
-            test "$(docker run --rm --platform "$platform" "$RELEASE_IMAGE" --version)" = "$(cat VERSION)"
-            docker run --rm --platform "$platform" --entrypoint python "$RELEASE_IMAGE" \
-              -c 'import importlib.metadata as m, os; assert m.version("cubesandbox") == "0.7.3"; assert os.geteuid() != 0; print("SDK 0.7.3 / non-root runtime OK")'
-          done
+          [[ "$RELEASE_IMAGE" == "$RELEASE_REPOSITORY"@sha256:* ]]
+          digest="${RELEASE_IMAGE#*@sha256:}"
+          [[ "$digest" =~ ^[a-f0-9]{64}$ ]]
+          version="${EXPECTED_VERSION:-$(cat VERSION)}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          # Each architecture has its own runner: the classic Docker store
+          # cannot retain two platform variants under one index digest.
+          test "$(docker run --rm --platform "$RELEASE_PLATFORM" "$RELEASE_IMAGE" --version)" = "$version"
+          docker run --rm --platform "$RELEASE_PLATFORM" --entrypoint python "$RELEASE_IMAGE" \
+            -c 'import importlib.metadata as m, os; assert m.version("cubesandbox") == "0.7.3"; assert os.geteuid() != 0; print("SDK 0.7.3 / non-root runtime OK")'
