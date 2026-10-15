@@ -59,11 +59,16 @@ jobs:
           CUBE_ADAPTER_TEST_POSTGRES_URL: postgresql://postgres@127.0.0.1:5432/cube_adapter_test
       - run: python -m unittest -v plugins/hermes/test_plugin.py
       - run: python tests/acceptance/test_claude_code_live_smoke.py -v
+      - run: python tests/acceptance/test_verify_feature_clients.py -v
       - if: matrix.python == '3.12'
         run: >-
           ruff check adapter plugins/hermes
           tests/acceptance/claude_code_live_smoke.py
           tests/acceptance/test_claude_code_live_smoke.py
+          tests/acceptance/multi_backend_live.py
+          tests/acceptance/openclaw_preset_live.py
+          tests/acceptance/verify_feature_clients.py
+          tests/acceptance/test_verify_feature_clients.py
       - if: matrix.python == '3.12'
         run: mypy adapter plugins/hermes
 

@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[Project website](https://aik8s.github.io/cubesandbox-agent-adapter/) · [v0.5.0 changelog](CHANGELOG.md) · [Website publishing](docs/website.md)
+[Project website](https://aik8s.github.io/cubesandbox-agent-adapter/) · [v0.6.0 changelog](CHANGELOG.md) · [Website publishing](docs/website.md)
 
 Community integration that routes OpenClaw, DeepSeek Harness (DSH), Hermes
 Agent and MCP hosts such as Codex, Claude Code or OpenCode into policy-controlled
@@ -20,15 +20,16 @@ The Adapter is the only component that holds Cube connection settings, full
 Sandbox IDs and traffic tokens. Runtime plugins receive opaque leases and
 return only short Sandbox references to the model.
 
-> **Project status:** v0.5.0 is a production-oriented reference implementation.
-> It adds fail-closed durable audit to encrypted leases, multi-tenant policy,
-> and approved trusted-task workflows. Deployment-specific hardening and
+> **Project status:** v0.6.0 is a production-oriented reference implementation.
+> It adds governed multi-backend execution and PostgreSQL audit to encrypted
+> leases, multi-tenant policy and approved tasks. Deployment-specific hardening and
 > acceptance tests are still required in every target CubeSandbox environment.
 
-Unreleased main adds [multi-backend routing, internal templates, governed MCP,
+v0.6.0 includes [multi-backend routing, internal templates, governed MCP,
 task recovery and PostgreSQL required audit](docs/production-features.md), plus a
-Light audit/approval console. Build current source to use these capabilities;
-the published v0.5.0 images do not contain them.
+Light audit/approval console. [Two real clusters and five native clients were
+tested](docs/production-features.md#two-real-clusters-and-native-clients--october-15-2026),
+with four new Light UI captures. The older v0.5.0 images lack these features.
 
 ## Start here
 
@@ -275,7 +276,7 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
   [v0.7.3 test/production upgrades, snapshot/MCP canaries and Light screenshots](docs/cubesandbox-upstream.md)
   passed, followed by [current-source Adapter acceptance and an authorized
   production image upgrade](docs/production-features.md#validation-and-light-ui-evidence).
-  Full per-Agent application acceptance of the new features remains pending;
+  five native clients also passed the new routing/renewal/log-resume flow;
 - fail-closed declarative profiles with persistent-volume and checkpoint gates;
 - current-source OpenClaw, DSH and Hermes plugins with 25 tools (19 existing plus 6 new), covering execution, file, async
   job, checkpoint, and trusted-task tools, plus an MCP facade for Codex,
@@ -285,7 +286,7 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
 - one-command installers for Kubernetes, OpenClaw, DSH, Hermes Agent and OpenCode;
 - Docker Compose for local development;
 - Helm chart, plain Kubernetes manifest, tests and release workflows;
-- Redis-backed encrypted recovery and distributed locking; the unreleased
+- Redis-backed encrypted recovery and distributed locking; the opt-in
   PostgreSQL path supports multi-replica `required` audit;
 - per-tenant bearer, OIDC and TLS/mTLS authentication;
 - Prometheus metrics, dependency-aware readiness and pluggable audit sinks;
@@ -304,7 +305,7 @@ kube-prometheus-stack monitors, and the Grafana dashboard are documented in
 
 For office-network Agents calling one or more production CubeSandbox clusters,
 read [the production and multi-cluster boundary](docs/multi-cluster-production.md).
-The v0.5.0 release binds one process to one backend; current source supports
+The v0.5.0 release binds one process to one backend; v0.6.0 supports
 operator-approved multi-backend Profiles. See [new capabilities](docs/production-features.md).
 Allow both CubeAPI and CubeProxy traffic—CubeAPI-only
 access can create a sandbox but cannot carry command, file, PTY or job results.
@@ -330,7 +331,7 @@ a CubeSandbox 0.7.0 Kubernetes lab cluster.
 Clone the repository:
 
 ```bash
-git clone --branch v0.5.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
+git clone --branch v0.6.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
 cd cubesandbox-agent-adapter
 ```
 
@@ -361,7 +362,7 @@ Override the image, namespace or Secret when needed:
   --namespace my-agent-runtime \
   --release cube-adapter \
   --secret existing-adapter-secret \
-  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.5.0 \
+  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.6.0 \
   --cube-api-url https://cube-api.example.internal \
   --cube-api-port 443 \
   --cube-proxy-host cube-proxy.example.internal \
@@ -370,7 +371,7 @@ Override the image, namespace or Secret when needed:
   --template agent-code
 ```
 
-v0.5.0 strong audit needs a default durable local/block StorageClass, or the
+Default SQLite strong audit needs a durable local/block StorageClass, or the
 explicit `--audit-storage-class` value above. Do not select NFS/shared storage.
 
 The default NetworkPolicy accepts clients with this Pod label in the same
@@ -467,7 +468,7 @@ Doctor in CI mode. Start a new restricted session afterward:
 hermes -t cube-adapter
 ```
 
-Current-source plugins register 25 tools; the v0.5.0 release registers 19.
+v0.6.0 plugins register 25 tools; the older v0.5.0 release registers 19.
 With Hermes tool compression enabled, these tools may initially appear through
 the built-in `tool_describe` / `tool_call` catalog instead of being copied into
 the model prompt directly; this is expected and was covered by the real test.
@@ -513,7 +514,7 @@ Adapter.
 ## Docker deployment and local development
 
 For a first installation, follow the [Docker Compose deployment guide](docs/deploy-docker.md).
-It uses the v0.5.0 published image and covers credentials, network addresses,
+It uses the v0.6.0 published image and covers credentials, network addresses,
 health checks, real sandbox acceptance, client integration, and upgrades.
 Docker runs the Adapter; an existing CubeSandbox backend is still required.
 
@@ -753,9 +754,9 @@ hermes plugins disable cube-adapter-tools
 
 ## Security and current limits
 
-- Memory state remains the zero-dependency default. v0.5.0 strong audit supports
-  one Adapter writer. Multiple replicas require Redis plus an explicit
-  `best_effort` downgrade; records remain encrypted but audit events may be lost.
+- Memory state remains the zero-dependency default. SQLite strong audit permits
+  one writer. v0.6.0 multiwriter `required` audit needs PostgreSQL plus encrypted
+  Redis and matching policy/key material; database HA must be configured separately.
 - PTY, SSE output, async cancellation, tenant quotas, and one independent task
   approver are implemented. Quorum approval, external approval callbacks, and
   a general-purpose rate limiter are not.

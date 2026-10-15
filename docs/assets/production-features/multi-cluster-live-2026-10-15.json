@@ -1,0 +1,21 @@
+{
+  "checks": {
+    "candidate-readiness": "PASS",
+    "cleanup": "PASS",
+    "cluster-1-create-execute": "PASS",
+    "cluster-2-create-execute": "PASS",
+    "distinct-control-planes": "PASS",
+    "durable-audit-cluster-filter": "PASS",
+    "restricted-profile-denied": "PASS",
+    "same-session-profile-isolation": "PASS"
+  },
+  "cleanup": {
+    "complete": true,
+    "errors": 0
+  },
+  "clusters": 2,
+  "production_configuration_changed": false,
+  "result": "PASS",
+  "suite": "two-real-cluster-routing",
+  "timestamp": "2026-10-15T10:33:39.075334+00:00"
+}

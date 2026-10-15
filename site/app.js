@@ -1,12 +1,12 @@
 const translated = [...document.querySelectorAll('[data-en]')];
 for (const element of translated) element.dataset.zh = element.textContent;
 const clients = {
-  openclaw: ['OpenClaw', '01-openclaw-trusted-task.jpg', 1720, 1238],
-  dsh: ['DSH', '02-dsh-trusted-task.jpg', 1720, 1238],
+  openclaw: ['OpenClaw', '01-openclaw-features-light.png', 1440, 1150],
+  dsh: ['DSH', '02-dsh-features-light.png', 1440, 1150],
   codex: ['Codex', '03-codex-trusted-task.png', 1600, 337],
   claude: ['Claude Code', '05-claude-code-trusted-task.png', 1450, 560],
-  opencode: ['OpenCode', '01-opencode-trusted-task.png', 1720, 760],
-  hermes: ['Hermes Agent', '04-hermes-trusted-task.jpg', 1720, 900],
+  opencode: ['OpenCode', '03-opencode-features-light.png', 1440, 1150],
+  hermes: ['Hermes Agent', '04-hermes-features-light.png', 1440, 1150],
 };
 let language = new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'zh';
 let selectedClient = 'openclaw';
@@ -18,9 +18,13 @@ function showClient(key) {
   shot.src = `assets/${file}`;
   shot.width = width;
   shot.height = height;
-  shot.alt = `${name} native application trusted-task execution screenshot`;
+  const recent = !['codex', 'claude'].includes(key);
+  shot.alt = `${name} native application ${recent ? 'multi-cluster renewal and resume' : 'historical trusted-task'} screenshot`;
   document.querySelector('#full-shot').href = shot.src;
-  document.querySelector('#client-caption').textContent = `${name} · ${language === 'en' ? 'Native client trusted-task run' : '原生应用可信任务实测'}`;
+  const caption = recent
+    ? (language === 'en' ? 'October 15 · multi-cluster, renewal & resume' : '10 月 15 日 · 多集群、续租与日志接续')
+    : (language === 'en' ? 'Historical trusted-task capture · not this round' : '历史可信任务截图 · 非本轮验收');
+  document.querySelector('#client-caption').textContent = `${name} · ${caption}`;
   document.querySelector('#client-panel').setAttribute('aria-labelledby', `tab-${key}`);
   for (const tab of tabs) {
     const active = tab.dataset.client === key;
@@ -37,6 +41,7 @@ function setLanguage() {
   toggle.setAttribute('aria-label', language === 'en' ? '切换到中文' : 'Switch to English');
   const base = 'https://github.com/aik8s/cubesandbox-agent-adapter/blob/main/';
   document.querySelector('[data-doc=trust]').href = base + (language === 'en' ? 'docs/trusted-execution.md' : 'docs/trusted-execution.zh-CN.md');
+  document.querySelector('[data-doc=features]').href = base + (language === 'en' ? 'docs/production-features.md' : 'docs/production-features.zh-CN.md');
   document.querySelector('[data-doc=docker]').href = base + (language === 'en' ? 'docs/deploy-docker.md' : 'docs/deploy-docker.zh-CN.md');
   document.querySelector('[data-doc=kubernetes]').href = base + (language === 'en' ? 'README.md#quick-start-kubernetes-adapter' : 'README.zh-CN.md#一键部署-kubernetes-adapter');
   document.querySelector('#copy-status').textContent = '';

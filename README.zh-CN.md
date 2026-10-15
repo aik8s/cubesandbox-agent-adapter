@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[项目官网](https://aik8s.github.io/cubesandbox-agent-adapter/) · [v0.5.0 更新日志](CHANGELOG.md) · [官网发布说明](docs/website.md)
+[项目官网](https://aik8s.github.io/cubesandbox-agent-adapter/) · [v0.6.0 更新日志](CHANGELOG.md) · [官网发布说明](docs/website.md)
 
 这是一个社区集成项目，用于把 OpenClaw、DeepSeek Harness（DSH）、Hermes
 Agent 以及 Codex、Claude Code、OpenCode 等 MCP Host 的工具调用，经受控策略路由到
@@ -19,12 +19,13 @@ Codex / Claude Code / OpenCode ─→ MCP stdio ─┘            │
 Adapter 是唯一持有 Cube 连接配置、完整 Sandbox ID 和流量令牌的组件。Runtime
 插件只获得不透明租约；返回给模型的是短 Sandbox 引用，不包含底层凭据。
 
-> **项目状态：** `v0.5.0` 是面向生产形态的参考实现，在持久化加密租约、多租户
-> 策略和带审批可信任务的基础上新增故障闭锁强审计。上线前仍需完成部署侧加固，
+> **项目状态：** `v0.6.0` 是面向生产形态的参考实现，在加密租约、多租户策略和
+> 带审批可信任务基础上，新增受控多集群执行与 PostgreSQL 强审计。上线前仍需完成部署侧加固，
 > 并在每个目标 CubeSandbox 环境重新验收。
 
-main 新增了尚未发布的[多集群路由、内部模板、受控 MCP、长任务恢复与 PostgreSQL 强审计](docs/production-features.zh-CN.md)，
-以及 Light 审计/审批控制台。使用这些能力需构建当前源码，不能直接使用旧 v0.5.0 发布镜像。
+v0.6.0 包含[多集群路由、内部模板、受控 MCP、长任务恢复与 PostgreSQL 强审计](docs/production-features.zh-CN.md)，
+以及 Light 审计/审批控制台。[两个真实集群和五个原生客户端已完成实测](docs/production-features.zh-CN.md#两个真实集群与应用验收2026-10-15)，
+附四个客户端的新 Light 截图。旧 v0.5.0 镜像不包含这些新能力。
 
 ## 新用户从哪里开始
 
@@ -258,7 +259,7 @@ Agent 工具结果中的 sandbox_ref
 - 当前源码使用固定版本 `cubesandbox==0.7.3` SDK 的带认证 Python Adapter；
   [v0.7.3 测试和生产集群升级、快照/MCP 实测及 Light 截图](docs/cubesandbox-upstream.md)已补充，
   随后完成[当前源码的 Adapter 验收与经授权的生产镜像升级](docs/production-features.zh-CN.md#实测与界面)；
-  新功能在各 Agent 客户端应用内的完整验收尚未重跑；
+  五个原生客户端也已通过新路由、续租与日志接续流程；
 - 默认拒绝公网的声明式 Profile，并提供持久卷与检查点能力门控；
 - OpenClaw、DSH、Hermes 当前源码共用 25 个工具（原有 19 个加 6 个新入口），
   并提供 Codex、Claude Code、OpenCode 可使用的 MCP 门面；
@@ -267,7 +268,7 @@ Agent 工具结果中的 sandbox_ref
 - Kubernetes、OpenClaw、DSH、Hermes Agent 和 OpenCode 一键安装脚本；
 - 本地开发用 Docker Compose；
 - Helm Chart、纯 Kubernetes Manifest、测试和镜像发布流水线；
-- Redis 加密恢复和分布式锁；未发布的 PostgreSQL 路径支持多副本 `required` 审计；
+- Redis 加密恢复和分布式锁；可选 PostgreSQL 路径支持多副本 `required` 审计；
 - 分租户 Bearer、OIDC、TLS/mTLS；
 - Prometheus 指标、依赖感知 Readiness 和可插拔审计 Sink；
 - 基于官方 SDK 的 MCP stdio 门面；
@@ -283,7 +284,7 @@ CubeMaster、TemplateCenter、Cubelet 原生指标，sr1 的 kube-prometheus-sta
 
 办公网 Agent 调用一个或多个生产 CubeSandbox 集群时，请阅读
 [生产网络与多集群边界](docs/multi-cluster-production.zh-CN.md)。v0.5.0 发布包一个 Adapter
-进程只绑定一个后端；当前源码可按服务端 Profile 路由多个后端，详见[新能力指南](docs/production-features.zh-CN.md)。网络上必须同时允许
+进程只绑定一个后端；v0.6.0 可按服务端 Profile 路由多个后端，详见[新能力指南](docs/production-features.zh-CN.md)。网络上必须同时允许
 CubeAPI 与 CubeProxy，只有 CubeAPI 时可能创建成功但无法返回命令、文件、PTY 或
 Job 结果。
 
@@ -309,7 +310,7 @@ Hermes 路径已在 macOS Apple Silicon 的 Hermes Agent 0.20.6 与 CubeSandbox
 克隆仓库：
 
 ```bash
-git clone --branch v0.5.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
+git clone --branch v0.6.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
 cd cubesandbox-agent-adapter
 ```
 
@@ -340,7 +341,7 @@ cd cubesandbox-agent-adapter
   --namespace my-agent-runtime \
   --release cube-adapter \
   --secret existing-adapter-secret \
-  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.5.0 \
+  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.6.0 \
   --cube-api-url https://cube-api.example.internal \
   --cube-api-port 443 \
   --cube-proxy-host cube-proxy.example.internal \
@@ -349,7 +350,7 @@ cd cubesandbox-agent-adapter
   --template agent-code
 ```
 
-v0.5.0 强审计要求集群存在默认的可靠本地盘/块存储 StorageClass，或使用上述
+默认 SQLite 强审计要求集群存在可靠本地盘/块存储 StorageClass，或使用上述
 `--audit-storage-class` 显式指定；不要选择 NFS/共享文件系统。
 
 默认 NetworkPolicy 只接受同一 Namespace 中带以下标签的客户端 Pod：
@@ -443,7 +444,7 @@ Plugin Doctor。安装后启动一个新的受限会话：
 hermes -t cube-adapter
 ```
 
-当前源码插件注册 25 个工具，v0.5.0 发布包为 19 个。启用 Hermes
+v0.6.0 插件注册 25 个工具，旧 v0.5.0 发布包为 19 个。启用 Hermes
 工具压缩时，这些工具可能不会直接塞进模型 Prompt，而是先出现在内置的
 `tool_describe` / `tool_call` 延迟目录中；这是正常行为，本仓库的真实联调已经覆盖
 了这条路径。
@@ -485,7 +486,7 @@ OpenCode 管理，Adapter 不需要模型 API Key。
 
 ## Docker 部署与本地开发
 
-首次部署请使用 [Docker Compose 部署指南](docs/deploy-docker.zh-CN.md)：它从 v0.5.0
+首次部署请使用 [Docker Compose 部署指南](docs/deploy-docker.zh-CN.md)：它从 v0.6.0
 发布镜像启动，包含密钥生成、网络地址选择、健康检查、真实沙箱验收、客户端接入和升级。
 Docker 只承载 Adapter，仍需连接已部署的 CubeSandbox 后端。
 
@@ -705,8 +706,8 @@ hermes plugins disable cube-adapter-tools
 
 ## 安全边界与当前限制
 
-- 零依赖默认值仍是内存状态；v0.5.0 强审计仅支持单 Adapter 写入者。只有明确降级为
-  `best_effort` 时才可配合 Redis 扩展多副本；此时租约记录会加密，但审计可能丢失；
+- 零依赖默认值仍是内存状态；SQLite 强审计只支持一个写入进程。v0.6.0 多副本
+  `required` 审计需要 PostgreSQL、加密 Redis 及一致的策略和密钥，数据库 HA 另行配置；
 - PTY、SSE 流式输出、异步取消、租户配额和单个独立审批者流程已经实现；多人会签、
   外部审批回调和通用限流器尚未实现；
 - CubeSandbox v0.7.1 已支持带 Volume Plugin 或 Host Mount 的 Checkpoint，但采用

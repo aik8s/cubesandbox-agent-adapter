@@ -1,12 +1,12 @@
 # Docker Compose 部署 Adapter
 
-> v0.5.0 默认启用故障闭锁的持久化强审计。请保留命名审计卷，并在生产使用前阅读
+> v0.6.0 默认启用故障闭锁的持久化强审计。请保留命名审计卷，并在生产使用前阅读
 > [强审计保证与恢复](audit-durability.zh-CN.md)。
 
 [English](deploy-docker.md) | [返回 README](../README.zh-CN.md)
 
 适合已有 CubeSandbox、希望在电脑或单台服务器上接入 Agent 的用户。本指南使用
-`ghcr.io/aik8s/cubesandbox-agent-adapter:v0.5.0` 发布镜像，支持 Linux amd64/arm64，
+`ghcr.io/aik8s/cubesandbox-agent-adapter:v0.6.0` 发布镜像，支持 Linux amd64/arm64，
 也可以通过 macOS 上的 Docker Desktop 运行 Linux 容器。
 
 ## 1. 先准备后端和工具
@@ -43,7 +43,7 @@ CubeSandbox 计算节点上。
 在计划运行 Adapter 的机器上执行。后续 Compose 命令都在仓库根目录运行：
 
 ```bash
-git clone --branch v0.5.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
+git clone --branch v0.6.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
 cd cubesandbox-agent-adapter
 ```
 
@@ -100,7 +100,7 @@ curl -fsS http://127.0.0.1:18080/healthz
 curl -fsS http://127.0.0.1:18080/readyz
 ```
 
-版本应为 `0.5.0`，健康信息还应包含 `audit_mode: required` 与 `audit_ready: true`。
+版本应为 `0.6.0`，健康信息还应包含 `audit_mode: required` 与 `audit_ready: true`。
 `/healthz` 检查进程存活，`/readyz` 检查后端依赖和模板；等到
 Compose 显示 `healthy` 且 `/readyz` 成功后再继续。启动失败时查看：
 

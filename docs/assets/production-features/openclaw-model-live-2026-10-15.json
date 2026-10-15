@@ -1,0 +1,12 @@
+{
+  "checks": {
+    "openclaw-application-model-response": "PASS",
+    "preset-injection-and-preflight": "PASS"
+  },
+  "cleanup": "verified",
+  "client_mode": "embedded OpenClaw CLI; not a gateway/TUI acceptance",
+  "production_configuration_changed": false,
+  "reply": "OPENCLAW_INTERNAL_MODEL_OK",
+  "result": "PASS",
+  "suite": "internal-openclaw-model-response"
+}

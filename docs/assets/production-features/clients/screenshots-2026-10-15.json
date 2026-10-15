@@ -1,0 +1,30 @@
+{
+  "real_client_ui": true,
+  "theme": "light",
+  "screenshots": [
+    {
+      "file": "01-openclaw-features-light.png",
+      "width": 1440,
+      "height": 1150,
+      "resource_references_masked": false
+    },
+    {
+      "file": "02-dsh-features-light.png",
+      "width": 1440,
+      "height": 1150,
+      "resource_references_masked": false
+    },
+    {
+      "file": "03-opencode-features-light.png",
+      "width": 1440,
+      "height": 1150,
+      "resource_references_masked": true
+    },
+    {
+      "file": "04-hermes-features-light.png",
+      "width": 1440,
+      "height": 1150,
+      "resource_references_masked": true
+    }
+  ]
+}

@@ -110,7 +110,17 @@ test "$(cat "$EXPORTED_TOKEN")" = 'test-token-from-kubernetes-secret'
 
 grep -F 'config set plugins.allow ["existing-plugin","cube-adapter-tools"] --strict-json' "$TEST_CALLS" >/dev/null
 grep -F 'plugins install ' "$TEST_CALLS" | grep -F -- '--force --accept-capabilities' >/dev/null
-grep -F 'config set tools.alsoAllow ["existing-tool","cube_exec","cube_status","cube_read","cube_write","cube_list","cube_job_start","cube_job_status","cube_job_output","cube_job_cancel","cube_checkpoint","cube_rollback","cube_fork","cube_release","cube_task_plan","cube_task_submit","cube_task_status","cube_task_result","cube_task_cancel","cube_task_receipt"] --strict-json' "$TEST_CALLS" >/dev/null
+node - "$TEST_CALLS" "$ROOT_DIR/plugins/openclaw/openclaw.plugin.json" <<'EOF'
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const calls = fs.readFileSync(process.argv[2], "utf8");
+const manifest = JSON.parse(fs.readFileSync(process.argv[3], "utf8"));
+const match = calls.match(/config set tools\.alsoAllow (\[.*\]) --strict-json/);
+assert.ok(match, "installer must update the OpenClaw tool allowlist");
+const allowed = JSON.parse(match[1]);
+assert.ok(allowed.includes("existing-tool"), "preserve existing tools");
+assert.deepEqual(new Set(allowed), new Set(["existing-tool", ...manifest.contracts.tools]));
+EOF
 grep -F 'config validate' "$TEST_CALLS" >/dev/null
 
 "$ROOT_DIR/scripts/install.sh" dsh \

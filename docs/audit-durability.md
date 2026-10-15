@@ -1,6 +1,6 @@
 # Fail-closed durable audit
 
-Unreleased main adds PostgreSQL multi-writer audit, a history/approval console
+v0.6.0 adds PostgreSQL multi-writer audit, a history/approval console
 and offline migration. See [new capabilities](production-features.md). The rest
 of this page records the v0.5.0 SQLite design and its release acceptance.
 

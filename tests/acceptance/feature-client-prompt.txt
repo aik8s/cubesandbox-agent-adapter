@@ -1,0 +1,18 @@
+Use only CubeSandbox tools. No host shell, file tools, skills or subagents.
+
+Discover the authorized profiles. Execute `printf STAGING_ROUTE_OK` with
+profile staging-code and `printf PRODUCTION_ROUTE_OK` with production-code.
+Renew only the staging lease. Start a staging job with:
+`printf RESUME_STDOUT_OK; printf RESUME_STDERR_OK >&2`
+
+Poll job status until succeeded, then call cube_job_resume with independent
+stdout_offset=0 and stderr_offset=0. Verify the two byte streams and their
+next offsets. Release both profiles/leases with action kill. Do not acquire
+again after release.
+
+For MCP clients, explicitly acquire one lease for each profile with runtime
+mcp and one unique session_key, then pass the appropriate lease_ref to each
+tool. Native plugins acquire implicitly; pass profile on lease-bound calls.
+
+Report actual routing, renewal, log cursors and cleanup results. Do not print
+full resource references, endpoint addresses, host paths or credentials.

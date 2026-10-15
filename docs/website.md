@@ -7,6 +7,13 @@ It is a static, light-theme Chinese/English introduction, not an Adapter console
 It has no backend connection, credentials, analytics, third-party fonts or npm
 dependencies. Client images reuse the redacted public evidence in this repository.
 
+For v0.6.0, four client tabs use the October 15 native Light UI captures from
+`docs/assets/production-features/clients/`: OpenClaw, DSH, OpenCode and Hermes.
+The Codex and Claude tabs explicitly retain historical trusted-task captures.
+Codex passed this round's MCP flow but its new native TUI image is pending
+terminal permission; Claude was not rerun. Full evidence and console images
+are linked in [the production-features guide](production-features.md).
+
 The `#trust` section puts permissions, independent approval, output policy,
 cleanup, signed receipts and redacted audit ahead of client screenshots. Its
 visual plan reuses five full-size light-theme trusted-task/backend report
@@ -36,7 +43,7 @@ scripts from an earlier deployment in the browser cache.
 `.github/workflows/pages.yml` builds on relevant pull requests and deploys on
 matching pushes to `main` (or manual dispatch). In repository Settings → Pages,
 the source must be **GitHub Actions**. Only `dist/site` is uploaded: the five
-static site files and thirteen explicitly allowlisted public screenshots. Use a
+static site files and seventeen explicitly allowlisted public screenshots. Use a
 clean build directory when previewing after changing the allowlist; CI starts
 from a fresh checkout. Never add `.env`, runtime logs or internal connection
 details to the site or its build output.

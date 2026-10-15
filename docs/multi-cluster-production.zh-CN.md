@@ -3,7 +3,7 @@
 本文说明办公网 Kubernetes 中的 OpenClaw、DSH、Hermes、Codex、Claude Code 或
 OpenCode，如何通过 Adapter 使用生产网络里的 CubeSandbox，以及当前多集群支持边界。
 
-main 的新增路由能力见[多集群、内部模板与持久审计](production-features.zh-CN.md)。以下保留 v0.5.0 发布包的部署边界；发布包不包含这些新增能力。
+v0.6.0 的新增路由能力见[多集群、内部模板与持久审计](production-features.zh-CN.md)。以下保留历史 v0.5.0 发布包的部署边界，不代表当前版本。
 
 ## v0.5.0 发布包支持情况
 

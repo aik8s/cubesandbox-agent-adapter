@@ -1,6 +1,6 @@
 # 强审计：先持久化，再执行
 
-main 新增了 PostgreSQL 多写入路径、查询/审批控制台与离线迁移；参见[未发布新能力](production-features.zh-CN.md)。本页其余部分记录 v0.5.0 的 SQLite 实现及当时的验收。
+v0.6.0 新增 PostgreSQL 多写入路径、查询/审批控制台与离线迁移；参见[新能力指南](production-features.zh-CN.md)。本页其余部分记录 v0.5.0 的 SQLite 实现及当时的验收。
 
 > v0.5.0 功能，默认启用故障闭锁的 `required` 审计。已有可信任务截图验证任务行为，
 > 不验证下文的审计故障场景。

@@ -1,0 +1,150 @@
+{
+  "backend": "CubeSandbox v0.7.3",
+  "clients": {
+    "codex": {
+      "checks": {
+        "both-sandboxes-killed": "PASS",
+        "bounded-renewal": "PASS",
+        "distinct-sandboxes": "PASS",
+        "independent-log-cursors": "PASS",
+        "profile-discovery": "PASS",
+        "two-cluster-routing": "PASS"
+      },
+      "result": "PASS",
+      "stream_next_offsets": {
+        "stderr": 16,
+        "stdout": 16
+      },
+      "tool_calls": 11,
+      "tools": [
+        "cube_profiles",
+        "cube_acquire",
+        "cube_acquire",
+        "cube_exec",
+        "cube_exec",
+        "cube_renew",
+        "cube_job_start",
+        "cube_job_status",
+        "cube_job_resume",
+        "cube_release",
+        "cube_release"
+      ]
+    },
+    "dsh": {
+      "checks": {
+        "both-sandboxes-killed": "PASS",
+        "bounded-renewal": "PASS",
+        "distinct-sandboxes": "PASS",
+        "independent-log-cursors": "PASS",
+        "profile-discovery": "PASS",
+        "two-cluster-routing": "PASS"
+      },
+      "result": "PASS",
+      "stream_next_offsets": {
+        "stderr": 16,
+        "stdout": 16
+      },
+      "tool_calls": 9,
+      "tools": [
+        "cube_profiles",
+        "cube_exec",
+        "cube_exec",
+        "cube_renew",
+        "cube_job_start",
+        "cube_job_status",
+        "cube_job_resume",
+        "cube_release",
+        "cube_release"
+      ]
+    },
+    "hermes": {
+      "checks": {
+        "both-sandboxes-killed": "PASS",
+        "bounded-renewal": "PASS",
+        "distinct-sandboxes": "PASS",
+        "independent-log-cursors": "PASS",
+        "profile-discovery": "PASS",
+        "two-cluster-routing": "PASS"
+      },
+      "result": "PASS",
+      "stream_next_offsets": {
+        "stderr": 16,
+        "stdout": 16
+      },
+      "tool_calls": 9,
+      "tools": [
+        "cube_profiles",
+        "cube_exec",
+        "cube_exec",
+        "cube_renew",
+        "cube_job_start",
+        "cube_job_status",
+        "cube_job_resume",
+        "cube_release",
+        "cube_release"
+      ]
+    },
+    "openclaw": {
+      "checks": {
+        "both-sandboxes-killed": "PASS",
+        "bounded-renewal": "PASS",
+        "distinct-sandboxes": "PASS",
+        "independent-log-cursors": "PASS",
+        "profile-discovery": "PASS",
+        "two-cluster-routing": "PASS"
+      },
+      "result": "PASS",
+      "stream_next_offsets": {
+        "stderr": 16,
+        "stdout": 16
+      },
+      "tool_calls": 9,
+      "tools": [
+        "cube_profiles",
+        "cube_exec",
+        "cube_exec",
+        "cube_renew",
+        "cube_job_start",
+        "cube_job_status",
+        "cube_job_resume",
+        "cube_release",
+        "cube_release"
+      ]
+    },
+    "opencode": {
+      "checks": {
+        "both-sandboxes-killed": "PASS",
+        "bounded-renewal": "PASS",
+        "distinct-sandboxes": "PASS",
+        "independent-log-cursors": "PASS",
+        "profile-discovery": "PASS",
+        "two-cluster-routing": "PASS"
+      },
+      "result": "PASS",
+      "stream_next_offsets": {
+        "stderr": 16,
+        "stdout": 16
+      },
+      "tool_calls": 12,
+      "tools": [
+        "cube_profiles",
+        "cube_acquire",
+        "cube_acquire",
+        "cube_exec",
+        "cube_exec",
+        "cube_renew",
+        "cube_job_start",
+        "cube_job_status",
+        "cube_job_resume",
+        "cube_job_resume",
+        "cube_release",
+        "cube_release"
+      ]
+    }
+  },
+  "evidence": "validated native tool-result JSON; independent stdout/stderr bytes",
+  "result": "PASS",
+  "sdk": "0.7.3",
+  "suite": "native-feature-clients",
+  "timestamp": "2026-10-15T10:42:44.261952+00:00"
+}

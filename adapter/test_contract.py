@@ -99,7 +99,16 @@ class OpenApiContractTest(unittest.TestCase):
             str(hermes["version"]),
             str(project_version.group(1)),
         }
-        self.assertEqual(versions, {"0.5.0"})
+        self.assertEqual(versions, {"0.6.0"})
+        expected_image = "ghcr.io/aik8s/cubesandbox-agent-adapter:v" + VERSION
+        values = yaml.safe_load((root / "charts/cubesandbox-agent-adapter/values.yaml").read_text())
+        self.assertEqual(values["image"]["tag"], "v" + VERSION)
+        compose = yaml.safe_load((root / "compose.yaml").read_text())
+        self.assertEqual(compose["services"]["adapter"]["image"], expected_image)
+        self.assertIn(
+            'DEFAULT_IMAGE="' + expected_image + '"', (root / "scripts/install.sh").read_text()
+        )
+        self.assertIn("image: " + expected_image, (root / "deploy/kubernetes.yaml").read_text())
 
 
 if __name__ == "__main__":

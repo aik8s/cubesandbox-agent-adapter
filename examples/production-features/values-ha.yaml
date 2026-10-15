@@ -1,4 +1,4 @@
-# Unreleased source build only. v0.5.0 published images lack these features.
+# Requires Adapter v0.6.0 or newer. Configure database HA separately.
 image:
   repository: YOUR_INTERNAL_REGISTRY/cubesandbox-agent-adapter
   tag: YOUR_VERIFIED_CANDIDATE_TAG

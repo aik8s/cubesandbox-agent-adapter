@@ -1,6 +1,6 @@
 # 多集群、内部模板与持久审计
 
-本页对应当前源码中的未发布功能。已经发布的 v0.5.0 镜像没有下述新增入口；部署时需要从当前代码构建候选镜像。生产中的现有 Adapter 和审计 PVC 不会因为修改这些配置自动迁移。
+本页对应 Adapter v0.6.0，后端验收版本为 CubeSandbox v0.7.3。使用 `ghcr.io/aik8s/cubesandbox-agent-adapter:v0.6.0`；旧 v0.5.0 镜像没有下述新增入口。生产中的现有 Adapter 和审计 PVC 不会自动迁移。
 
 ## 一个入口，多个执行集群
 
@@ -71,7 +71,7 @@ PostgreSQL 接入不等于已具备数据库 HA。主机故障不丢已确认提
 
 ## 部署与离线迁移
 
-[values-ha.yaml](../examples/production-features/values-ha.yaml) 是 Helm 示例，先准备 PostgreSQL、Redis、Secret 与三个目录 ConfigMap。`configurationSecrets` 挂载只读 Secret，`networkPolicy.extraEgress` 为每个后端配置最小必要路由。先在测试环境构建、固定候选镜像 digest，再安装；示例不会创建数据库或同步备库。
+[values-ha.yaml](../examples/production-features/values-ha.yaml) 是 Helm 示例，先准备 PostgreSQL、Redis、Secret 与三个目录 ConfigMap。`configurationSecrets` 挂载只读 Secret，`networkPolicy.extraEgress` 为每个后端配置最小必要路由。先在测试环境验收发布镜像、固定 digest，再安装；示例不会创建数据库或同步备库。
 
 迁移生产审计前停掉全部写入实例，导出并核对源数据库，处理每条待确认操作。不要删除旧库。
 
@@ -107,11 +107,47 @@ python -m adapter.audit_admin --postgres-url-env AUDIT_DSN --schema cube_adapter
 - [加强的续租实测](assets/production-features/live-results-2026-10-15.json)：初始超时 15 秒、超时即删除、关闭自动恢复；35 秒任务跨 Adapter 重启完成，记录 6 次续租，原命令没有重跑。沙箱与临时模板已清理。
 - [最终回归](assets/production-features/regression-2026-10-15.json)：75 项 Adapter 测试全部通过，包括 5 项 PostgreSQL 和 1 项 Redis 集成测试，无跳过；原生插件、安装器、Helm、Ruff 与 Mypy 通过。
 
-内部模型配置的测试范围是注入和结构预检，尚未验证 OpenClaw 应用启动及模型实际应答。上述截图是 Adapter 自身界面，不是新增功能在各 Agent 客户端内的截图。
+### 两个真实集群与应用验收（2026-10-15）
+
+- [双集群写入验收](assets/production-features/multi-cluster-live-2026-10-15.json)：同一个隔离 Adapter 连接 sr1 与 gd18-ai-002，分别创建并执行、核对实际资源归属，验证同会话不同 Profile 隔离、越权拒绝、按集群查询审计；临时沙箱全部清理。没有修改现有生产 Adapter 配置。
+- [五客户端原始工具结果核验](assets/production-features/clients-live-2026-10-15.json)：OpenClaw、DSH、Hermes、Codex、OpenCode 共 50 次 Cube 工具调用通过，覆盖 Profile 发现、双集群执行、仅对指定租约续租、异步 Job、独立 stdout/stderr 字节游标和两边释放。核验直接读取客户端记录的工具返回，不以最终回答文字判定成功。
+- [内部模型实际应答](assets/production-features/openclaw-model-live-2026-10-15.json)：生产集群的临时 OpenClaw 沙箱完成 preset 注入、预检，并通过 `openclaw agent --local` 调用内部 Qwen 模型，返回约定标记。密钥取自私有 Secret 引用，未写入镜像或公开证据；仅沙箱使用模型 Pod 的最小出站白名单。此项覆盖嵌入式 CLI，不代表 gateway/TUI 或所有 fallback 模型都已验收。沙箱已删除。
+
+四个客户端的原生 Web 界面截图如下，均为 Light 模式。OpenClaw、Hermes、OpenCode 展示真实原生客户端会话；DSH 截图来自同一流程的额外 Web 端复测。OpenCode、Hermes 的完整资源引用已遮挡，工具名与执行结果保留。
+
+![OpenClaw 多集群、续租与日志接续](assets/production-features/clients/01-openclaw-features-light.png)
+
+![DSH Web 原生工具调用与清理结果](assets/production-features/clients/02-dsh-features-light.png)
+
+![OpenCode 原生 MCP 调用与独立游标](assets/production-features/clients/03-opencode-features-light.png)
+
+![Hermes 原生工具结果与双集群清理](assets/production-features/clients/04-hermes-features-light.png)
+
+Codex CLI 0.160.0 的 stdio MCP 实测已通过；电脑操控权限未允许访问终端，暂缺本轮原生 TUI 截图。Claude Code 本轮未复测，历史可信任务素材仍保留原日期。
+
+### 如何复现
+
+以下脚本会创建、执行并删除临时沙箱，只在获得两个目标环境的测试授权后运行。配置文件、凭据和原始客户端日志保存在仓库外的私有目录；提交前只保留脱敏结果：
+
+```sh
+# private-config.yaml 含 backends 和 profiles，结构参照 examples/production-features。
+# 两个 Profile 指向不同控制面，均需已有 READY 的代码模板。
+python tests/acceptance/multi_backend_live.py --help
+python tests/acceptance/openclaw_preset_live.py --help
+# 在原生客户端中执行此提示词，然后核验原始工具结果。
+# Codex/OpenCode 需要允许受信 MCP 服务上的对应工具；不应全局跳过审批。
+python tests/acceptance/verify_feature_clients.py --help
+```
+
+通用流程见 [feature-client-prompt.txt](../tests/acceptance/feature-client-prompt.txt)。无人值守 Codex 验收仅为该临时 MCP server 的八个测试工具设置单工具 `approval_mode="approve"`，宿主保持只读；`approval_policy=never` 下需要审批的 MCP 调用会被拒绝，进程退出码为 0 也不能当作通过。
+
+### 从 v0.5.0 升级
+
+保留审计卷、Token、HMAC Key 和已有 Profile，先停写核对，再固定新镜像 digest；不要重新生成身份密钥或删除旧 SQLite。原有工具名称保留，三个原生插件增至 25 个工具；重跑 OpenClaw 安装器会合并补齐新增工具的允许列表，不覆盖已有允许项。多集群、内部 preset、沙箱 MCP、自动续租和控制台都需要显式配置。SQLite 仍只支持一个写入进程；多副本必须准备 PostgreSQL 和加密 Redis，不能只增加副本数。切换数据库按上面的离线迁移步骤执行。
 
 ## 生产候选镜像升级
 
-2026-10-15 经单独授权，在生产环境完成候选镜像升级。镜像在中转机构建、推送暂存仓库，经镜像同步服务进入生产，先由不挂载业务 Secret/审计盘的一次性 Pod 验证拉取和非 root 启动，再以固定 digest 更新现有 Adapter。未发布新的 GitHub Release。
+2026-10-15 经单独授权，在正式发布前完成生产候选镜像升级。镜像在中转机构建、推送暂存仓库，经镜像同步服务进入生产，先由不挂载业务 Secret/审计盘的一次性 Pod 验证拉取和非 root 启动，再以固定 digest 更新现有 Adapter。这是当时的源码候选，不等于已将生产切换到 v0.6.0 发布镜像。
 
 [生产验收记录](assets/production-features/production-upgrade-2026-10-15.json)中，创建、命令执行、状态、持久审计查询和删除均通过。升级前一致性快照中的 145,736 条历史事件逐行摘要一致，未完成意图为 0。保留现有单副本、SQLite 审计 PVC、Profile、Secret 和入口；部署 spec 对比仅镜像改变。审计哈希链从新事件开始，旧记录不回写补签。
 

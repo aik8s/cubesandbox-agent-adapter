@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## v0.6.0 — 2026-10-15
 
 ### Production execution features
 
@@ -23,6 +23,9 @@
 
 ### Fixed
 
+- OpenClaw installation now merges all 25 registered tools into `tools.alsoAllow`,
+  including the six new feature tools, while retaining existing entries. A
+  manifest-derived regression test prevents the allowlist drifting again.
 - Revalidate the backend sandbox before reusing a session lease. If the sandbox
   expired, create a fresh one instead of returning a dead lease; preserve any
   checkpoint-bearing lease for explicit cleanup. Status and direct execution
@@ -32,6 +35,15 @@
 
 ### Added
 
+- Real two-cluster write acceptance on sr1 and gd18-ai-002, plus 50 verified
+  Cube tool calls across OpenClaw, DSH, Hermes, Codex and OpenCode. New Light
+  captures show four native Web UIs; Codex TUI capture remains pending terminal
+  permission. Claude Code was not rerun in this acceptance round.
+- A real internal-model reply through an injected OpenClaw preset in a
+  disposable production-cluster sandbox (embedded CLI, not gateway/TUI).
+- Reusable two-backend and OpenClaw preset runners, native transcript
+  verification and negative tests that reject denied MCP calls even when the
+  client process exits successfully.
 - OpenCode V1/V2 MCP configuration generation, a one-command installer with a
   trusted-task-only default policy, and a redacted live-acceptance runner.
 - Claude Code client guidance, a redacted live-acceptance runner, and native
@@ -50,12 +62,13 @@
 
 ### Changed
 
-- Current source pins `cubesandbox==0.7.3`; the published v0.5.0 image keeps its
+- v0.6.0 pins `cubesandbox==0.7.3`; the older v0.5.0 image keeps its
   original `cubesandbox==0.7.0` SDK pin.
 - Reviewed the stable CubeSandbox v0.7.2 release, including source-only Python
   SDK changes, snapshot fixes, S3lvol work, OpenCode guidance and the Kubernetes
   `cubeNode.hostNetwork: true` default. The sr1 upgrade and narrow SDK canaries
-  passed; full Adapter/client acceptance on this backend is still pending.
+  passed. Subsequent v0.7.3 backend and Adapter/client acceptance is recorded
+  in the production-features guide.
 - Verified the Adapter against the Python SDK installed from the v0.7.2 source
   tag: 47 Python tests passed, with only the unconfigured optional Redis
   integration test skipped.
@@ -66,6 +79,20 @@
   and added a public environment label to the acceptance renderer.
 - Refreshed the Python 3.12 slim base image and install available Debian security
   updates during container builds.
+
+### Upgrade notes
+
+- Keep the audit volume, identity/HMAC keys and Profiles. SQLite remains a
+  single-writer authority; PostgreSQL plus encrypted Redis is required for
+  multiwriter `required` audit. No database migration or HA setup is automatic.
+- Existing tool names remain compatible. Rerun the native-client installer for
+  the new tools. New console, preset, MCP and keepalive features require opt-in.
+- Retain default endpoints for old leases lacking a backend fingerprint, or
+  clean them up first. Recreate old task plans without a policy binding.
+- The Adapter must reach both CubeAPI and CubeProxy for each backend. API-only
+  HTTPS ingress is not a data-plane tunnel.
+
+See [configuration, acceptance evidence and upgrade guidance](docs/production-features.md).
 
 ## v0.5.0 — 2026-09-09
 

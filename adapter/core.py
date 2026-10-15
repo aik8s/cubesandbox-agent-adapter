@@ -46,7 +46,7 @@ from .state import (
 from .task_config import TaskOutputConfig, TaskTemplateConfig
 from .template_config import load_template_presets
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 MAX_BODY_BYTES = 16 * 1024 * 1024
 MAX_COMMAND_BYTES = 16 * 1024
 MAX_FILE_BYTES = 256 * 1024

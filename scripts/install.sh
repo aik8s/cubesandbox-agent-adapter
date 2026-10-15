@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_IMAGE="ghcr.io/aik8s/cubesandbox-agent-adapter:v0.5.0"
+DEFAULT_IMAGE="ghcr.io/aik8s/cubesandbox-agent-adapter:v0.6.0"
 
 die() {
   printf 'error: %s\n' "$*" >&2
@@ -297,7 +297,8 @@ install_openclaw() {
     cube_job_start cube_job_status cube_job_output cube_job_cancel \
     cube_checkpoint cube_rollback cube_fork cube_release \
     cube_task_plan cube_task_submit cube_task_status cube_task_result \
-    cube_task_cancel cube_task_receipt
+    cube_task_cancel cube_task_receipt \
+    cube_mcp_list cube_mcp_call cube_renew cube_profiles cube_recover cube_job_resume
   openclaw config validate
   note "OpenClaw integration installed; restart the Gateway"
 }

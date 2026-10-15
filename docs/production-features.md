@@ -1,7 +1,8 @@
 # Multi-backend execution and durable audit
 
-These capabilities are on the unreleased main branch. Published v0.5.0 images
-do not implement them. Build and verify a candidate image before deploying.
+These capabilities ship in Adapter v0.6.0, tested with CubeSandbox v0.7.3.
+Use `ghcr.io/aik8s/cubesandbox-agent-adapter:v0.6.0`; older v0.5.0 images
+do not implement them. Verify the release image and pin its digest before deploying.
 The detailed [Chinese guide](production-features.zh-CN.md) covers configuration,
 network boundaries, rollout and migration; executable examples are in
 [production-features](../examples/production-features/).
@@ -109,16 +110,62 @@ These are real candidate-Adapter pages using a test tenant and synthetic tasks:
 - [Stronger renewal acceptance](assets/production-features/live-results-2026-10-15.json): a 35-second job survived an Adapter restart with a 15-second initial timeout, kill-on-timeout and auto-resume disabled. Six renewals were recorded; the command was not relaunched. Sandboxes and the temporary template were cleaned.
 - [Final regression](assets/production-features/regression-2026-10-15.json): all 75 Adapter tests passed with no skips, including five PostgreSQL and one Redis integration test, plus native plugins, installers, Helm, Ruff and Mypy.
 
-Internal-model validation covers injection and structural preflight, not an
-OpenClaw application start or a real model response. These are Adapter UI
-screenshots, not new per-Agent application screenshots.
+### Two real clusters and native clients — October 15, 2026
+
+- [Two-cluster write acceptance](assets/production-features/multi-cluster-live-2026-10-15.json): one isolated Adapter created and executed sandboxes on sr1 and gd18-ai-002, verified actual resource ownership, same-session Profile isolation, unauthorized-Profile denial and backend-filtered audit. All temporary sandboxes were deleted; the existing production Adapter configuration was unchanged.
+- [Native tool-result verification](assets/production-features/clients-live-2026-10-15.json): OpenClaw, DSH, Hermes, Codex and OpenCode completed 50 Cube tool calls. Checks cover discovery, both clusters, targeted renewal, async jobs, independent stdout/stderr byte cursors and release. Verification reads recorded tool results, not the assistant's final claims.
+- [Internal-model reply](assets/production-features/openclaw-model-live-2026-10-15.json): a disposable OpenClaw sandbox on the production cluster applied its preset and called the internal Qwen model through `openclaw agent --local`, returning the expected marker. Secrets stayed private; only sandbox-scoped egress to the model Pod was allowed. This verifies embedded CLI execution, not gateway/TUI or every fallback. The sandbox was deleted.
+
+These are native Web UI captures in Light mode. DSH shows an additional Web
+repeat of the same flow; the other three show their recorded native sessions.
+Full resource references are masked in OpenCode and Hermes.
+
+![OpenClaw routing, renewal and resume](assets/production-features/clients/01-openclaw-features-light.png)
+
+![DSH Web native calls and cleanup](assets/production-features/clients/02-dsh-features-light.png)
+
+![OpenCode MCP calls and byte cursors](assets/production-features/clients/03-opencode-features-light.png)
+
+![Hermes tool results and cleanup](assets/production-features/clients/04-hermes-features-light.png)
+
+Codex CLI 0.160.0 passed the real stdio MCP flow. Its native TUI capture is
+pending terminal computer-control permission. Claude Code was not rerun in
+this round; historical evidence retains its original date.
+
+### Reproduction and upgrade
+
+The operator-only runners create and delete temporary sandboxes; obtain test
+authorization for both clusters first. Keep configuration, credentials and raw
+client logs outside the repository in a private directory:
+
+```sh
+python tests/acceptance/multi_backend_live.py --help
+python tests/acceptance/openclaw_preset_live.py --help
+python tests/acceptance/verify_feature_clients.py --help
+```
+
+Run [the bounded client prompt](../tests/acceptance/feature-client-prompt.txt)
+in each native client, then verify its recorded tool results. Headless Codex
+acceptance used per-tool `approval_mode="approve"` only for eight tools on the
+trusted temporary MCP server, with a read-only host sandbox. Do not globally
+bypass approvals. A zero process exit with denied MCP calls is not a pass.
+
+When upgrading v0.5.0, retain audit storage, tokens, HMAC keys and Profiles;
+stop writers and reconcile first, then pin the new image digest. Existing tool
+names remain valid; native plugins now expose 25 tools. Rerun the OpenClaw
+installer to merge the six new allowed tools without removing existing entries.
+New routing, presets, sandbox MCP, keepalive and console remain opt-in. SQLite
+still permits one writer; multiple replicas require PostgreSQL and encrypted
+Redis, not just a replica-count change. Follow the offline migration procedure
+before changing audit authority.
 
 ## Authorized production candidate upgrade
 
 On 2026-10-15 the candidate was built on the image relay, pushed to staging,
 replicated to production and pull-tested in a one-off unprivileged Pod without
 business Secrets or the audit volume. The existing Adapter was then updated
-to the fixed image digest. No new GitHub Release was published.
+to the fixed image digest before the formal release. That source candidate
+deployment is not an upgrade to the v0.6.0 release image.
 
 [Production acceptance](assets/production-features/production-upgrade-2026-10-15.json)
 passed create/execute/status/audit/delete. All 145,736 historical rows in the

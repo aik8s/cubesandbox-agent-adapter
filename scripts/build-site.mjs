@@ -25,6 +25,9 @@ for (const file of ['01-openclaw-trusted-task.jpg', '02-dsh-trusted-task.jpg', '
   await copyFile(path.join(root, 'docs/assets/trusted-execution-apps', file), path.join(output, 'assets', file));
 }
 await copyFile(path.join(root, 'docs/assets/opencode-acceptance/01-opencode-trusted-task.png'), path.join(output, 'assets/01-opencode-trusted-task.png'));
+for (const file of ['01-openclaw-features-light.png', '02-dsh-features-light.png', '03-opencode-features-light.png', '04-hermes-features-light.png']) {
+  await copyFile(path.join(root, 'docs/assets/production-features/clients', file), path.join(output, 'assets', file));
+}
 for (const file of ['02-plan-and-approval.jpg', '03-execution-output-cleanup.jpg', '04-signed-receipt.jpg', '05-failure-handling.jpg', '07-cubesandbox-v071.jpg']) {
   await copyFile(path.join(root, 'docs/assets/trusted-execution-acceptance', file), path.join(output, 'assets', file));
 }
