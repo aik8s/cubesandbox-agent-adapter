@@ -33,7 +33,7 @@ def _object(properties: Dict[str, Any], required: list[str] | None = None) -> Di
     }
 
 
-TOOL_SCHEMAS = {
+TOOL_SCHEMAS: Dict[str, Any] = {
     "cube_exec": {
         "name": "cube_exec",
         "description": (
@@ -85,9 +85,7 @@ TOOL_SCHEMAS = {
             "Pause or destroy this Hermes session's CubeSandbox lease. Prefer "
             "pause when work may continue and kill when the task is complete."
         ),
-        "parameters": _object(
-            {"action": {"type": "string", "enum": ["pause", "kill"]}}
-        ),
+        "parameters": _object({"action": {"type": "string", "enum": ["pause", "kill"]}}),
     },
 }
 
@@ -145,9 +143,7 @@ TOOL_SCHEMAS.update(
         "cube_rollback": {
             "name": "cube_rollback",
             "description": "Roll this Hermes lease back to a checkpoint.",
-            "parameters": _object(
-                {"checkpoint_ref": {"type": "string"}}, ["checkpoint_ref"]
-            ),
+            "parameters": _object({"checkpoint_ref": {"type": "string"}}, ["checkpoint_ref"]),
         },
         "cube_fork": {
             "name": "cube_fork",
@@ -230,9 +226,7 @@ def _bearer_token(settings: Dict[str, str]) -> str:
         except OSError as error:
             raise AdapterClientError("configured Adapter token file is not readable") from error
     if not token:
-        raise AdapterClientError(
-            f"{settings['token_env']} or token_file is not configured"
-        )
+        raise AdapterClientError(f"{settings['token_env']} or token_file is not configured")
     return token
 
 
@@ -262,9 +256,7 @@ def _request(settings: Dict[str, str], path: str, body: Dict[str, Any]) -> Dict[
             raw = response.read(MAX_RESPONSE_BYTES + 1)
     except HTTPError as error:
         raw = error.read(MAX_RESPONSE_BYTES)
-        raise AdapterClientError(
-            f"Cube Adapter {error.code}: {_error_message(raw)}"
-        ) from error
+        raise AdapterClientError(f"Cube Adapter {error.code}: {_error_message(raw)}") from error
     except (URLError, TimeoutError) as error:
         raise AdapterClientError("Cube Adapter is unreachable") from error
     if len(raw) > MAX_RESPONSE_BYTES:
@@ -287,14 +279,16 @@ def _session_key(kwargs: Dict[str, Any]) -> str:
     )
 
 
-def _acquire(settings: Dict[str, str], kwargs: Dict[str, Any]) -> Dict[str, Any]:
+def _acquire(
+    settings: Dict[str, str], kwargs: Dict[str, Any], profile: str | None = None
+) -> Dict[str, Any]:
     lease = _request(
         settings,
         "/v1/leases/acquire",
         {
             "runtime": "hermes",
             "session_key": _session_key(kwargs),
-            "profile": settings["profile"],
+            "profile": profile or settings["profile"],
         },
     )
     lease_ref = lease.get("lease_ref")
@@ -310,7 +304,16 @@ def _handler(
     def run(args: Dict[str, Any], **kwargs: Any) -> str:
         try:
             body = dict(args or {})
-            if operation == "task_plan":
+            selected_profile = body.pop("profile", None)
+            if operation in {"profiles", "recover"}:
+                path = "/v1/" + operation
+                body = {}
+            elif operation == "job_resume":
+                job_ref = body.pop("job_ref", "")
+                if not isinstance(job_ref, str) or not JOB_REF_RE.fullmatch(job_ref):
+                    raise AdapterClientError("invalid Cube Adapter job reference")
+                path = f"/v1/jobs/{job_ref}/resume"
+            elif operation == "task_plan":
                 path = "/v1/tasks/plan"
             elif operation == "task_submit":
                 plan_ref = body.pop("plan_ref", "")
@@ -330,8 +333,18 @@ def _handler(
                 path = f"/v1/tasks/{task_ref}/{operation.removeprefix('task_')}"
                 body = {}
             else:
-                lease = _acquire(settings, kwargs)
-                if operation in {"exec", "read", "write", "list", "status", "release"}:
+                lease = _acquire(settings, kwargs, selected_profile)
+                if operation in {
+                    "exec",
+                    "read",
+                    "write",
+                    "list",
+                    "status",
+                    "release",
+                    "renew",
+                    "mcp-list",
+                    "mcp-call",
+                }:
                     path = f"/v1/leases/{lease['lease_ref']}/{operation}"
                 elif operation == "job_start":
                     path = f"/v1/leases/{lease['lease_ref']}/jobs"
@@ -350,8 +363,7 @@ def _handler(
                     ):
                         raise AdapterClientError("invalid Cube Adapter checkpoint reference")
                     path = (
-                        f"/v1/leases/{lease['lease_ref']}/checkpoints/"
-                        f"{checkpoint_ref}/{operation}"
+                        f"/v1/leases/{lease['lease_ref']}/checkpoints/{checkpoint_ref}/{operation}"
                     )
                 else:  # pragma: no cover - registration invariant
                     raise AdapterClientError("unsupported Cube Adapter operation")
@@ -371,6 +383,62 @@ def _handler(
             return json.dumps({"error": message}, ensure_ascii=False)
 
     return run
+
+
+TOOL_SCHEMAS.update(
+    {
+        "cube_mcp_list": {
+            "name": "cube_mcp_list",
+            "description": "List registered sandbox MCP tools.",
+            "parameters": _object({}),
+        },
+        "cube_mcp_call": {
+            "name": "cube_mcp_call",
+            "description": "Call an allowlisted sandbox MCP tool.",
+            "parameters": _object(
+                {"name": {"type": "string"}, "arguments": {"type": "object"}}, ["name"]
+            ),
+        },
+        "cube_renew": {
+            "name": "cube_renew",
+            "description": "Renew a lease within its policy lifetime.",
+            "parameters": _object({}),
+        },
+        "cube_profiles": {
+            "name": "cube_profiles",
+            "description": "Discover authorized cluster profiles.",
+            "parameters": _object({}),
+        },
+        "cube_recover": {
+            "name": "cube_recover",
+            "description": "Inspect durable inventory without restarting commands.",
+            "parameters": _object({}),
+        },
+        "cube_job_resume": {
+            "name": "cube_job_resume",
+            "description": "Resume independent stdout/stderr byte cursors.",
+            "parameters": _object(
+                {
+                    "job_ref": {"type": "string"},
+                    "stdout_offset": {"type": "integer", "minimum": 0},
+                    "stderr_offset": {"type": "integer", "minimum": 0},
+                    "max_bytes": {"type": "integer", "minimum": 1, "maximum": 1048576},
+                },
+                ["job_ref"],
+            ),
+        },
+    }
+)
+for _name, _schema in TOOL_SCHEMAS.items():
+    if not _name.startswith("cube_task_") and _name not in {
+        "cube_profiles",
+        "cube_recover",
+        "cube_job_resume",
+    }:
+        _schema["parameters"]["properties"]["profile"] = {
+            "type": "string",
+            "description": "Optional server-approved cluster profile.",
+        }
 
 
 def register(ctx: Any) -> None:
@@ -405,6 +473,12 @@ def register(ctx: Any) -> None:
         ("cube_task_result", "task_result"),
         ("cube_task_cancel", "task_cancel"),
         ("cube_task_receipt", "task_receipt"),
+        ("cube_mcp_list", "mcp-list"),
+        ("cube_mcp_call", "mcp-call"),
+        ("cube_renew", "renew"),
+        ("cube_profiles", "profiles"),
+        ("cube_recover", "recover"),
+        ("cube_job_resume", "job_resume"),
     ):
         ctx.register_tool(
             name=name,

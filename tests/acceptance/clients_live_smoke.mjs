@@ -46,7 +46,7 @@ openclawPlugin.register({
   registerTool: (definition, options = {}) =>
     openclawRegistrations.push({ definition, options }),
 });
-assert.equal(openclawRegistrations.length, 19);
+assert.equal(openclawRegistrations.length, 25);
 const openclawTools = new Map(
   openclawRegistrations.map(({ definition, options }) => [
     options.name || definition.name,
@@ -73,7 +73,7 @@ const disposeDsh = applyDsh(
   },
   { adapterUrl, tokenEnv, profile: "trusted-acceptance" },
 );
-assert.equal(dshTools.length, 19);
+assert.equal(dshTools.length, 25);
 const dshToolMap = new Map(dshTools.map((tool) => [tool.name, tool]));
 const dsh = await runFlow("dsh", (name, params) =>
   dshToolMap.get(name).execute(params, {
@@ -87,7 +87,7 @@ disposeDsh();
 const result = {
   result: "PASS",
   clients: [openclaw, dsh],
-  tools_per_client: 19,
+  tools_per_client: 25,
   trusted_task_tools_per_client: 6,
 };
 if (process.env.CUBE_ACCEPT_CLIENT_OUTPUT) {

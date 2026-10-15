@@ -1,0 +1,27 @@
+templates:
+  internal-openclaw-v1:
+    backend_id: production
+    version: internal-openclaw.1
+    template: REPLACE_WITH_IMMUTABLE_INTERNAL_OPENCLAW_TEMPLATE_ID
+    files:
+      /root/.openclaw/openclaw.json:
+        models:
+          providers:
+            internal:
+              baseUrl: ${FILE:/etc/cube-secrets/models/base-url}
+              apiKey: ${FILE:/etc/cube-secrets/models/api-key}
+              api: openai-completions
+              models:
+                - {id: qwen38-note-review, name: Qwen Internal}
+                - {id: REPLACE_WITH_SECOND_REGISTERED_MODEL, name: Internal Fallback}
+        agents:
+          defaults:
+            model:
+              primary: internal/qwen38-note-review
+              fallbacks: [internal/REPLACE_WITH_SECOND_REGISTERED_MODEL]
+            models:
+              internal/qwen38-note-review: {alias: qwen}
+              internal/REPLACE_WITH_SECOND_REGISTERED_MODEL: {alias: fallback}
+    # Build the internal image without an official initializer overwriting this
+    # file. These commands are fixed by the operator, not supplied by the agent.
+    preflight_argv: [python3, -c, "import json; json.load(open('/root/.openclaw/openclaw.json')); print('CONFIG_JSON_OK')"]

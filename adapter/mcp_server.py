@@ -99,9 +99,7 @@ class AdapterHttpClient:
         return urllib.parse.quote(value, safe="")
 
 
-def build_mcp_server(
-    client: Optional[AdapterHttpClient] = None, *, profile: Optional[str] = None
-):
+def build_mcp_server(client: Optional[AdapterHttpClient] = None, *, profile: Optional[str] = None):
     """Build the server lazily so the REST-only image can diagnose missing MCP deps."""
     try:
         from mcp.server import MCPServer
@@ -125,6 +123,7 @@ def build_mcp_server(
         runtime: str,
         session_key: str,
         request_id: Optional[str] = None,
+        profile: Optional[str] = None,
     ) -> dict:
         """Acquire or reconnect an isolated CubeSandbox lease."""
         return api.post(
@@ -132,7 +131,7 @@ def build_mcp_server(
             _compact(
                 runtime=runtime,
                 session_key=session_key,
-                profile=selected_profile,
+                profile=profile or selected_profile,
                 request_id=request_id,
             ),
         )
@@ -190,9 +189,7 @@ def build_mcp_server(
     @mcp.tool()
     def cube_download_artifact(lease_ref: str, path: str) -> dict:
         """Download a binary artifact as Base64 with its SHA-256 digest."""
-        return api.post(
-            f"/v1/leases/{api.segment(lease_ref)}/artifacts/download", {"path": path}
-        )
+        return api.post(f"/v1/leases/{api.segment(lease_ref)}/artifacts/download", {"path": path})
 
     @mcp.tool()
     def cube_job_start(lease_ref: str, command: str, cwd: str = "/workspace") -> dict:
@@ -223,9 +220,7 @@ def build_mcp_server(
     @mcp.tool()
     def cube_task_plan(template: str, parameters: dict) -> dict:
         """Plan a schema-validated trusted task without executing it."""
-        return api.post(
-            "/v1/tasks/plan", {"template": template, "parameters": parameters}
-        )
+        return api.post("/v1/tasks/plan", {"template": template, "parameters": parameters})
 
     @mcp.tool()
     def cube_task_submit(plan_ref: str) -> dict:
@@ -255,9 +250,7 @@ def build_mcp_server(
     @mcp.tool()
     def cube_checkpoint(lease_ref: str, name: Optional[str] = None) -> dict:
         """Create a gated microVM checkpoint for a lease."""
-        return api.post(
-            f"/v1/leases/{api.segment(lease_ref)}/checkpoints", _compact(name=name)
-        )
+        return api.post(f"/v1/leases/{api.segment(lease_ref)}/checkpoints", _compact(name=name))
 
     @mcp.tool()
     def cube_rollback(lease_ref: str, checkpoint_ref: str) -> dict:
@@ -269,21 +262,57 @@ def build_mcp_server(
         )
 
     @mcp.tool()
-    def cube_fork(
-        lease_ref: str, checkpoint_ref: str, branch: Optional[str] = None
-    ) -> dict:
+    def cube_fork(lease_ref: str, checkpoint_ref: str, branch: Optional[str] = None) -> dict:
         """Fork a new lease from a checkpoint when its profile permits it."""
         return api.post(
-            f"/v1/leases/{api.segment(lease_ref)}/checkpoints/"
-            f"{api.segment(checkpoint_ref)}/fork",
+            f"/v1/leases/{api.segment(lease_ref)}/checkpoints/{api.segment(checkpoint_ref)}/fork",
             _compact(branch=branch),
         )
 
     @mcp.tool()
     def cube_release(lease_ref: str, action: str = "kill") -> dict:
         """Release a lease using kill or pause according to policy."""
+        return api.post(f"/v1/leases/{api.segment(lease_ref)}/release", {"action": action})
+
+    @mcp.tool()
+    def cube_profiles() -> dict:
+        """Discover server-authorized cluster profiles, without exposing endpoints."""
+        return api.post("/v1/profiles", {})
+
+    @mcp.tool()
+    def cube_recover() -> dict:
+        """Inspect persistent execution inventory; never re-run unknown commands."""
+        return api.post("/v1/recover", {})
+
+    @mcp.tool()
+    def cube_renew(lease_ref: str) -> dict:
+        """Renew a lease within the operator-set lifetime limit."""
+        return api.post(f"/v1/leases/{api.segment(lease_ref)}/renew", {})
+
+    @mcp.tool()
+    def cube_mcp_list(lease_ref: str) -> dict:
+        """List allowlisted sandbox MCP tools and their operator-owned schemas."""
+        return api.post(f"/v1/leases/{api.segment(lease_ref)}/mcp-list", {})
+
+    @mcp.tool()
+    def cube_mcp_call(lease_ref: str, name: str, arguments: dict) -> dict:
+        """Call a registered sandbox MCP tool with schema and output limits."""
         return api.post(
-            f"/v1/leases/{api.segment(lease_ref)}/release", {"action": action}
+            f"/v1/leases/{api.segment(lease_ref)}/mcp-call", {"name": name, "arguments": arguments}
+        )
+
+    @mcp.tool()
+    def cube_job_resume(
+        job_ref: str, stdout_offset: int = 0, stderr_offset: int = 0, max_bytes: int = 65536
+    ) -> dict:
+        """Resume independent byte cursors without restarting job execution."""
+        return api.post(
+            f"/v1/jobs/{api.segment(job_ref)}/resume",
+            {
+                "stdout_offset": stdout_offset,
+                "stderr_offset": stderr_offset,
+                "max_bytes": max_bytes,
+            },
         )
 
     return mcp

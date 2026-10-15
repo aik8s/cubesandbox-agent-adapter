@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import re
 import ssl
@@ -37,6 +39,20 @@ ALLOWED_FIELDS: Dict[str, frozenset[str]] = {
     "checkpoint_action": frozenset({"branch", "request_id"}),
     "task_plan": frozenset({"template", "parameters", "request_id"}),
     "task_approve": frozenset({"decision", "reason", "request_id"}),
+    "mcp_call": frozenset({"name", "arguments", "request_id"}),
+    "job_resume": frozenset({"stdout_offset", "stderr_offset", "max_bytes", "request_id"}),
+    "audit_query": frozenset(
+        {
+            "limit",
+            "before",
+            "action",
+            "operation_id",
+            "lease_ref",
+            "task_ref",
+            "backend_id",
+            "request_id",
+        }
+    ),
     "empty": frozenset({"request_id"}),
 }
 
@@ -68,6 +84,17 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                         200,
                         adapter.metrics_payload(),
                         "text/plain; version=0.0.4; charset=utf-8",
+                    )
+                    return
+                if path == "/console":
+                    if not adapter.config.audit_ui:
+                        raise AdapterError(404, "not_found", "console is disabled")
+                    from pathlib import Path
+
+                    self._bytes(
+                        200,
+                        Path(__file__).with_name("console.html").read_bytes(),
+                        "text/html; charset=utf-8",
                     )
                     return
                 if path == "/audit":
@@ -112,7 +139,9 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                 if match:
                     adapter.authorize(auth, "job:output")
                     self._sse(
-                        adapter.iter_job_events(match.group(1), auth, timeout=self._sse_timeout(parsed.query))
+                        adapter.iter_job_events(
+                            match.group(1), auth, timeout=self._sse_timeout(parsed.query)
+                        )
                     )
                     return
                 match = re.fullmatch(r"/v1/ptys/([^/]+)/status", path)
@@ -124,7 +153,9 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                 if match:
                     adapter.authorize(auth, "pty:events")
                     self._sse(
-                        adapter.iter_pty_events(match.group(1), auth, timeout=self._sse_timeout(parsed.query))
+                        adapter.iter_pty_events(
+                            match.group(1), auth, timeout=self._sse_timeout(parsed.query)
+                        )
                     )
                     return
                 match = re.fullmatch(r"/v1/tasks/([^/]+)/status", path)
@@ -149,6 +180,37 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
             try:
                 auth = self._auth(adapter)
                 path = urlparse(self.path).path
+                if path in {"/v1/profiles", "/v1/recover", "/v1/task-plans"}:
+                    self._body("empty")
+                    profile_handlers = {
+                        "/v1/profiles": adapter.discover,
+                        "/v1/recover": adapter.recover,
+                        "/v1/task-plans": adapter.task_plans,
+                    }
+                    self._json(200, profile_handlers[path](auth))
+                    return
+                if path == "/v1/audit/query":
+                    self._json(200, adapter.audit_query(self._body("audit_query"), auth))
+                    return
+                match = re.fullmatch(r"/v1/leases/([^/]+)/(renew|mcp-list|mcp-call)", path)
+                if match:
+                    lease_ref, action = match.groups()
+                    body = self._body("mcp_call" if action == "mcp-call" else "empty")
+                    value = (
+                        adapter.lease_renew(lease_ref, body, auth)
+                        if action == "renew"
+                        else adapter.mcp_call(lease_ref, body, auth)
+                        if action == "mcp-call"
+                        else adapter.mcp_list(lease_ref, auth)
+                    )
+                    self._json(200, value)
+                    return
+                match = re.fullmatch(r"/v1/jobs/([^/]+)/resume", path)
+                if match:
+                    self._json(
+                        200, adapter.job_resume(match.group(1), self._body("job_resume"), auth)
+                    )
+                    return
                 if path == "/v1/leases/acquire":
                     body = self._body("acquire")
                     adapter.authorize(auth, "lease:acquire")
@@ -174,9 +236,7 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                     )
                     self._json(202 if action == "submit" else 200, value)
                     return
-                match = re.fullmatch(
-                    r"/v1/tasks/([^/]+)/(status|result|cancel|receipt)", path
-                )
+                match = re.fullmatch(r"/v1/tasks/([^/]+)/(status|result|cancel|receipt)", path)
                 if match:
                     task_ref, action = match.groups()
                     body = self._body("empty")
@@ -230,18 +290,14 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                     self._json(200, handlers[action](lease_ref, body, auth))
                     return
 
-                match = re.fullmatch(
-                    r"/v1/leases/([^/]+)/artifacts/(upload|download)", path
-                )
+                match = re.fullmatch(r"/v1/leases/([^/]+)/artifacts/(upload|download)", path)
                 if match:
                     lease_ref, action = match.groups()
                     adapter.authorize(auth, "artifact:" + action)
                     key = "artifact_" + action
                     body = self._body(key)
                     handler = (
-                        adapter.artifact_upload
-                        if action == "upload"
-                        else adapter.artifact_download
+                        adapter.artifact_upload if action == "upload" else adapter.artifact_download
                     )
                     self._json(200, handler(lease_ref, body, auth))
                     return
@@ -257,7 +313,11 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                     job_ref, action = match.groups()
                     adapter.authorize(auth, "job:" + action)
                     body = self._body(
-                        "job_output" if action == "output" else "job_cancel" if action == "cancel" else "empty"
+                        "job_output"
+                        if action == "output"
+                        else "job_cancel"
+                        if action == "cancel"
+                        else "empty"
                     )
                     if action == "status":
                         value = adapter.job_status(job_ref, auth)
@@ -305,9 +365,7 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                     body = self._body("checkpoint_action")
                     checkpoint_handlers: Dict[
                         str,
-                        Callable[
-                            [str, str, Dict[str, Any], AuthContext], Dict[str, Any]
-                        ],
+                        Callable[[str, str, Dict[str, Any], AuthContext], Dict[str, Any]],
                     ] = {
                         "rollback": adapter.checkpoint_rollback,
                         "fork": adapter.checkpoint_fork,
@@ -357,7 +415,9 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                 raise AdapterError(413, "invalid_body", "request body is empty or too large")
             content_type = self.headers.get("Content-Type", "").split(";", 1)[0].strip()
             if content_type != "application/json":
-                raise AdapterError(415, "unsupported_media_type", "Content-Type must be application/json")
+                raise AdapterError(
+                    415, "unsupported_media_type", "Content-Type must be application/json"
+                )
             try:
                 value = json.loads(self.rfile.read(size))
             except (UnicodeDecodeError, json.JSONDecodeError) as error:
@@ -390,9 +450,7 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             for item in events:
                 payload = json.dumps(item["data"], ensure_ascii=False)
-                self.wfile.write(
-                    f"event: {item['event']}\ndata: {payload}\n\n".encode("utf-8")
-                )
+                self.wfile.write(f"event: {item['event']}\ndata: {payload}\n\n".encode("utf-8"))
                 self.wfile.flush()
             self.close_connection = True
 
@@ -423,6 +481,20 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
             self.send_header("Content-Type", content_type)
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("X-Frame-Options", "DENY")
+            if content_type.startswith("text/html"):
+                scripts = re.findall(rb"<script>(.*?)</script>", content, re.DOTALL)
+                hashes = " ".join(
+                    "'sha256-" + base64.b64encode(hashlib.sha256(script).digest()).decode() + "'"
+                    for script in scripts
+                )
+                self.send_header(
+                    "Content-Security-Policy",
+                    "default-src 'none'; script-src "
+                    + (hashes or "'none'")
+                    + "; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+                )
             self.send_header("Content-Length", str(len(content)))
             self.end_headers()
             self.wfile.write(content)

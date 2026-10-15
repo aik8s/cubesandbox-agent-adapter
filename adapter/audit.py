@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 from .audit_journal import AuditJournal
 from .config import AdapterConfig
 from .metrics import AdapterMetrics
+from .postgres_audit import PostgresAuditJournal
 
 
 class AuditSink(Protocol):
@@ -87,7 +88,7 @@ class AuditManager:
         metrics: AdapterMetrics,
         recent_limit: int = 200,
         queue_size: int = 4096,
-        journal: Optional[AuditJournal] = None,
+        journal: Optional[AuditJournal | PostgresAuditJournal] = None,
     ) -> None:
         self._sinks = tuple(sinks)
         self.journal = journal
@@ -114,11 +115,20 @@ class AuditManager:
         if "http" in config.audit_sinks:
             assert config.audit_http_url is not None
             sinks.append(HttpAuditSink(config.audit_http_url, config.audit_http_token))
-        journal = (
-            AuditJournal(config.audit_log + ".sqlite3", config.audit_sinks)
-            if config.audit_mode == "required"
-            else None
-        )
+        if config.audit_database_url and config.audit_mode != "required":
+            raise RuntimeError("PostgreSQL audit requires audit.mode=required")
+        journal: AuditJournal | PostgresAuditJournal | None = None
+        if config.audit_mode == "required":
+            journal = (
+                PostgresAuditJournal(
+                    config.audit_database_url,
+                    config.audit_sinks,
+                    schema=config.audit_database_schema,
+                    require_sync_replica=config.audit_require_sync_replica,
+                )
+                if config.audit_database_url
+                else AuditJournal(config.audit_log + ".sqlite3", config.audit_sinks)
+            )
         manager = cls(sinks, metrics=metrics, journal=journal)
         if journal is None and "file" in config.audit_sinks:
             manager.load_recent(config.audit_log)

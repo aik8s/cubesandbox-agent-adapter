@@ -30,14 +30,14 @@ function sessionKey(exec) {
   return String(exec.agent?.id || exec.rootCallId || "dsh-agentless");
 }
 
-async function acquire(config, exec) {
+async function acquire(config, exec, profile) {
   return request(
     config,
     "/v1/leases/acquire",
     {
       runtime: "dsh",
       session_key: sessionKey(exec),
-      profile: String(config.profile || "offline-code"),
+      profile: String(profile || config.profile || "offline-code"),
     },
     exec.signal,
   );
@@ -56,6 +56,7 @@ const object = (properties, required = []) => ({
 });
 
 function tool(name, description, parameters, run, requiresLease = true) {
+  if (requiresLease) parameters = { ...parameters, properties: { ...parameters.properties, profile: { type: "string", description: "Optional server-approved cluster profile." } } };
   return {
     name,
     description,
@@ -63,8 +64,9 @@ function tool(name, description, parameters, run, requiresLease = true) {
     output,
     timeoutMs: 125000,
     async execute(args, exec) {
-      const lease = requiresLease ? await acquire(this?.config || {}, exec) : null;
-      return run(lease, args, exec);
+      const { profile, ...body } = args;
+      const lease = requiresLease ? await acquire(this?.config || {}, exec, profile) : null;
+      return run(lease, body, exec);
     },
   };
 }
@@ -225,6 +227,14 @@ export function apply(ctx, config = {}) {
       false,
     ],
   ];
+  definitions.push(
+    ["cube_mcp_list", "List allowlisted sandbox MCP tools.", object({}), lease => [`/v1/leases/${lease.lease_ref}/mcp-list`, {}]],
+    ["cube_mcp_call", "Call a schema-checked sandbox MCP tool.", object({ name: { type: "string" }, arguments: { type: "object" } }, ["name"]), (lease, args) => [`/v1/leases/${lease.lease_ref}/mcp-call`, args]],
+    ["cube_renew", "Renew a policy-bounded lease.", object({}), lease => [`/v1/leases/${lease.lease_ref}/renew`, {}]],
+    ["cube_profiles", "Discover authorized cluster profiles.", object({}), () => ["/v1/profiles", {}], false],
+    ["cube_recover", "Inspect execution inventory without rerunning commands.", object({}), () => ["/v1/recover", {}], false],
+    ["cube_job_resume", "Resume independent stdout/stderr byte cursors.", object({ job_ref: { type: "string" }, stdout_offset: { type: "integer", minimum: 0 }, stderr_offset: { type: "integer", minimum: 0 }, max_bytes: { type: "integer", minimum: 1, maximum: 1048576 } }, ["job_ref"]), (_lease, { job_ref, ...body }) => [`/v1/jobs/${encodeURIComponent(job_ref)}/resume`, body], false],
+  );
   const disposers = definitions.map(([toolName, description, parameters, endpoint, requiresLease]) =>
     register(
       tool(toolName, description, parameters, async (lease, args, exec) => {

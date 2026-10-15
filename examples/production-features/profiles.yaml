@@ -1,0 +1,22 @@
+profiles:
+  staging-code:
+    backend_id: staging
+    template: REPLACE_WITH_STAGING_READY_TEMPLATE_ID
+    allow_internet_access: false
+    network: {allow_public_traffic: false}
+    keepalive_enabled: true
+    max_keepalive_seconds: 3600
+    sandbox_timeout_seconds: 300
+    max_command_seconds: 1800
+  production-openclaw:
+    backend_id: production
+    template_preset: internal-openclaw-v1
+    allow_internet_access: false
+    network: {allow_public_traffic: false}
+  staging-mcp:
+    backend_id: staging
+    template: REPLACE_WITH_MCP_READY_TEMPLATE_ID
+    mcp_policy: controlled-echo
+    checkpoints_enabled: false
+    allow_internet_access: false
+    network: {allow_public_traffic: false}

@@ -1,0 +1,37 @@
+# Unreleased source build only. v0.5.0 published images lack these features.
+image:
+  repository: YOUR_INTERNAL_REGISTRY/cubesandbox-agent-adapter
+  tag: YOUR_VERIFIED_CANDIDATE_TAG
+replicaCount: 2
+auth:
+  existingSecret: cube-adapter-auth
+  sharedTokenEnabled: false
+  tokenPrincipalsKey: principals.json
+  receiptHmacKey: receipt-hmac-key
+state:
+  enabled: true
+  existingSecret: cube-adapter-auth
+  prefix: cube-agent-adapter-production
+audit:
+  mode: required
+  sinks: [stdout]
+  persistence: {enabled: false}
+  postgresql:
+    enabled: true
+    existingSecret: cube-adapter-postgresql
+    requireSyncReplica: true
+adapter:
+  auditUi: true
+backends: {existingConfigMap: cube-adapter-backends}
+profiles: {existingConfigMap: cube-adapter-profiles}
+templatePresets: {existingConfigMap: cube-adapter-templates}
+mcpPolicies: {existingConfigMap: cube-adapter-mcp-policies}
+configurationSecrets:
+  - {name: cube-backend-credentials, mountPath: /etc/cube-secrets/backends}
+  - {name: internal-model-credentials, mountPath: /etc/cube-secrets/models}
+networkPolicy:
+  # Set narrow Pod selectors / CIDRs for Redis, PostgreSQL and every CubeAPI /
+  # CubeProxy. Merely registering a backend does not open a network route.
+  redisPodSelector: {app: cube-adapter-redis}
+  postgresqlPodSelector: {app: cube-adapter-postgresql}
+  extraEgress: []

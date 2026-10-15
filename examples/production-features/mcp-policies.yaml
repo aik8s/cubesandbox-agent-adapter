@@ -1,0 +1,17 @@
+policies:
+  controlled-echo:
+    # Image must contain the v0.7.3 gateway and this server, expose port 50005,
+    # and launch the gateway through CubeSandbox's supported MCP startup path.
+    servers:
+      echo:
+        run_cmd: python3 /opt/mcp_echo_server.py
+    tools:
+      echo:
+        type: object
+        additionalProperties: false
+        required: [text]
+        properties:
+          text: {type: string, maxLength: 256}
+    timeout_seconds: 15
+    max_input_bytes: 2048
+    max_output_bytes: 65536

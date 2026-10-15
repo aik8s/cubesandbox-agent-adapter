@@ -1,0 +1,22 @@
+{
+  "result": "PASS",
+  "command": "make test PYTHON=.venv/bin/python",
+  "adapter_tests": 75,
+  "adapter_tests_skipped": 0,
+  "postgresql_integration_tests": 5,
+  "redis_integration_tests": 1,
+  "hermes_tests": 2,
+  "claude_acceptance_parser_tests": 3,
+  "task_script_tests": 5,
+  "native_node_plugin_tests": "PASS",
+  "installers": "PASS",
+  "helm_lint_and_render": "PASS",
+  "ruff": "PASS",
+  "mypy_source_files": 21,
+  "mypy": "PASS",
+  "python_local": "3.10",
+  "candidate_container_python": "3.12",
+  "candidate_container_nonroot_uid": 65532,
+  "candidate_container_imports": "PASS",
+  "full_python_version_matrix": "NOT_RUN"
+}

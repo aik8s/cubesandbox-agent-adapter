@@ -36,7 +36,7 @@ async function request(config, toolContext, path, body, signal) {
   return payload;
 }
 
-async function acquire(config, toolContext, signal) {
+async function acquire(config, toolContext, signal, profile) {
   return request(
     config,
     toolContext,
@@ -44,20 +44,24 @@ async function acquire(config, toolContext, signal) {
     {
       runtime: "openclaw",
       session_key: sessionKey(toolContext),
-      profile: String(config.profile || "offline-code"),
+      profile: String(profile || config.profile || "offline-code"),
     },
     signal,
   );
 }
 
 function dynamicTool(definition, execute) {
+  definition = { ...definition, parameters: { ...definition.parameters, properties: {
+    ...definition.parameters.properties, profile: { type: "string", description: "Optional server-approved profile; never an endpoint." },
+  } } };
   return {
     ...definition,
     factory: ({ config, toolContext }) => ({
       ...definition,
       execute: async (_toolCallId, params, signal) => {
-        const lease = await acquire(config, toolContext, signal);
-        const result = await execute(config, toolContext, lease, params, signal);
+        const { profile, ...body } = params;
+        const lease = await acquire(config, toolContext, signal, profile);
+        const result = await execute(config, toolContext, lease, body, signal);
         return {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
           details: result,
@@ -270,6 +274,17 @@ const taskDefinitions = [
   },
 ];
 
+const advancedLeaseDefinitions = [
+  { name: "cube_mcp_list", label: "CubeSandbox MCP Tools", description: "List operator-approved sandbox MCP tools.", parameters: object({}), call: lease => [`/v1/leases/${lease.lease_ref}/mcp-list`, {}] },
+  { name: "cube_mcp_call", label: "CubeSandbox MCP Call", description: "Call an allowlisted sandbox MCP tool with schema-checked arguments.", parameters: object({ name: { type: "string" }, arguments: { type: "object" } }, ["name"]), call: (lease, params) => [`/v1/leases/${lease.lease_ref}/mcp-call`, params] },
+  { name: "cube_renew", label: "CubeSandbox Renew", description: "Renew a lease within its operator-set maximum lifetime.", parameters: object({}), call: lease => [`/v1/leases/${lease.lease_ref}/renew`, {}] },
+];
+const advancedDirectDefinitions = [
+  { name: "cube_profiles", label: "CubeSandbox Profiles", description: "Discover authorized cluster profiles and capabilities.", parameters: object({}), call: () => ["/v1/profiles", {}] },
+  { name: "cube_recover", label: "CubeSandbox Recovery", description: "Inspect durable execution inventory without restarting unknown commands.", parameters: object({}), call: () => ["/v1/recover", {}] },
+  { name: "cube_job_resume", label: "CubeSandbox Resume Logs", description: "Read independent byte-range stdout/stderr cursors without restarting a job.", parameters: object({ job_ref: { type: "string" }, stdout_offset: { type: "integer", minimum: 0 }, stderr_offset: { type: "integer", minimum: 0 }, max_bytes: { type: "integer", minimum: 1, maximum: 1048576 } }, ["job_ref"]), call: ({ job_ref, ...body }) => [`/v1/jobs/${encodeURIComponent(job_ref)}/resume`, body] },
+];
+
 export default defineToolPlugin({
   id: "cube-adapter-tools",
   name: "CubeSandbox Adapter Tools",
@@ -297,5 +312,11 @@ export default defineToolPlugin({
         }),
       ),
     ),
+    ...advancedLeaseDefinitions.map(definition => tool(dynamicTool(definition, (config, context, lease, params, signal) => {
+      const [path, body] = definition.call(lease, params); return request(config, context, path, body, signal);
+    }))),
+    ...advancedDirectDefinitions.map(definition => tool(directTool(definition, (config, context, params, signal) => {
+      const [path, body] = definition.call(params); return request(config, context, path, body, signal);
+    }))),
   ],
 });

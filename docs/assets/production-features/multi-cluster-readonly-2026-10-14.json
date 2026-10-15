@@ -1,0 +1,11 @@
+{
+  "result": "PASS",
+  "real_control_planes": 2,
+  "backends": {
+    "production": "ready",
+    "staging": "ready"
+  },
+  "proxy_connectivity": "PASS",
+  "operations": "read-only readiness / template GET",
+  "production_resources_changed": false
+}

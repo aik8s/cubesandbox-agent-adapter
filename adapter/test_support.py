@@ -21,7 +21,7 @@ class FakeFiles:
         self.values = {}
         self.directories = {"/workspace", "/tmp"}
 
-    def write(self, path, content):
+    def write(self, path, content, **_kwargs):
         self.values[path] = content
         self.directories.add(str(PurePosixPath(path).parent))
 
@@ -54,7 +54,7 @@ class FakeFiles:
             "isDir": path in self.directories,
         }
 
-    def make_dir(self, path):
+    def make_dir(self, path, **_kwargs):
         self.directories.add(path)
         return self.stat(path)
 
@@ -175,7 +175,7 @@ class FakeSandbox:
         return cls(**kwargs)
 
     @classmethod
-    def connect(cls, sandbox_id):
+    def connect(cls, sandbox_id, **_kwargs):
         return cls.by_id[sandbox_id]
 
     def pause(self, wait=True):
@@ -193,6 +193,17 @@ class FakeSandbox:
         if self.killed:
             raise SandboxNotFoundError("sandbox no longer exists")
         return {"state": "paused" if self.paused else "running"}
+
+    def get_mcp_token(self):
+        return "gateway-private-test-token"
+
+    def get_host(self, port):
+        return f"{self.sandbox_id}-{port}.cube.app"
+
+    def set_timeout(self, timeout):
+        if self.killed:
+            raise SandboxNotFoundError("sandbox no longer exists")
+        self.last_timeout = timeout
 
     def create_snapshot(self, name=None):
         return FakeSnapshot(f"snapshot-{name or len(self.created)}")
@@ -225,10 +236,10 @@ def reconcile_test_audit(adapter):
     from .audit_journal import AuditJournal
 
     adapter.audit.close()
-    journal = AuditJournal(adapter.config.audit_log + '.sqlite3', adapter.config.audit_sinks)
+    journal = AuditJournal(adapter.config.audit_log + ".sqlite3", adapter.config.audit_sinks)
     try:
         for event in journal.pending_operations():
-            journal.reconcile(event['operation_id'], 'test-operator', 'inspected-fake-resource')
+            journal.reconcile(event["operation_id"], "test-operator", "inspected-fake-resource")
     finally:
         journal.close()
     adapter.audit = AuditManager.from_config(adapter.config, adapter.metrics)

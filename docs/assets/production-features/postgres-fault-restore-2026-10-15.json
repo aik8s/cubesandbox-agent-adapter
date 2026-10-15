@@ -1,0 +1,26 @@
+{
+  "backend": "instrumented factory (audit boundary only)",
+  "chain_tip": "5f0bb781fd0d6bfd5c87b17404a0777dde7d8d18e3997f4fe99cae5120099676",
+  "checks": {
+    "offline_both_replicas_fail_closed": "PASS",
+    "old_instances_remain_fenced": "PASS",
+    "pg_dump_restore_into_separate_database": "PASS",
+    "restart_restores_authorized_execution": "PASS"
+  },
+  "events": 15,
+  "incomplete_operations": 0,
+  "outage": {
+    "backend_factory_calls": 0,
+    "statuses": [
+      503,
+      503
+    ]
+  },
+  "restore": {
+    "chain_tip_matches": true,
+    "restored_events": 15,
+    "source_events": 15,
+    "source_overwritten": false
+  },
+  "result": "PASS"
+}

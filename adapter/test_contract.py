@@ -52,6 +52,9 @@ class OpenApiContractTest(unittest.TestCase):
             "checkpoint_action": "CheckpointActionRequest",
             "task_plan": "TaskPlanRequest",
             "task_approve": "TaskApproveRequest",
+            "mcp_call": "McpCallRequest",
+            "job_resume": "JobResumeRequest",
+            "audit_query": "AuditQueryRequest",
             "empty": "EmptyRequest",
         }
         self.assertEqual(set(mapping), set(ALLOWED_FIELDS))
@@ -77,20 +80,12 @@ class OpenApiContractTest(unittest.TestCase):
         chart = yaml.safe_load(
             (root / "charts/cubesandbox-agent-adapter/Chart.yaml").read_text("utf-8")
         )
-        openclaw = json.loads(
-            (root / "plugins/openclaw/openclaw.plugin.json").read_text("utf-8")
-        )
-        openclaw_package = json.loads(
-            (root / "plugins/openclaw/package.json").read_text("utf-8")
-        )
-        dsh_package = json.loads(
-            (root / "plugins/dsh/package.json").read_text("utf-8")
-        )
+        openclaw = json.loads((root / "plugins/openclaw/openclaw.plugin.json").read_text("utf-8"))
+        openclaw_package = json.loads((root / "plugins/openclaw/package.json").read_text("utf-8"))
+        dsh_package = json.loads((root / "plugins/dsh/package.json").read_text("utf-8"))
         hermes = yaml.safe_load((root / "plugins/hermes/plugin.yaml").read_text("utf-8"))
         project_text = (root / "pyproject.toml").read_text("utf-8")
-        project_version = re.search(
-            r'^version = "([^"]+)"$', project_text, flags=re.MULTILINE
-        )
+        project_version = re.search(r'^version = "([^"]+)"$', project_text, flags=re.MULTILINE)
         self.assertIsNotNone(project_version)
         versions = {
             (root / "VERSION").read_text("utf-8").strip(),

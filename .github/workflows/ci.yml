@@ -21,6 +21,18 @@ jobs:
       matrix:
         python: ["3.10", "3.12", "3.14"]
     services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: cube_adapter_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
       redis:
         image: redis:8-alpine
         ports:
@@ -44,6 +56,7 @@ jobs:
         env:
           CUBE_TEST_REDIS_URL: redis://127.0.0.1:6379/15
           CUBE_TEST_REDIS_KEY: MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=
+          CUBE_ADAPTER_TEST_POSTGRES_URL: postgresql://postgres@127.0.0.1:5432/cube_adapter_test
       - run: python -m unittest -v plugins/hermes/test_plugin.py
       - run: python tests/acceptance/test_claude_code_live_smoke.py -v
       - if: matrix.python == '3.12'
@@ -89,6 +102,13 @@ jobs:
           ! helm template unsafe charts/cubesandbox-agent-adapter
           --set replicaCount=2
           >/dev/null 2>&1
+      - name: Render fail-closed PostgreSQL HA
+        run: >-
+          helm template pg-ha charts/cubesandbox-agent-adapter
+          --set replicaCount=2 --set state.enabled=true
+          --set audit.postgresql.enabled=true --set audit.postgresql.existingSecret=audit-db
+          --set audit.persistence.enabled=false
+          >/dev/null
       - name: Reject unsafe strict audit storage and replicas
         run: |
           ! helm template unsafe charts/cubesandbox-agent-adapter --set audit.persistence.enabled=false >/dev/null 2>&1

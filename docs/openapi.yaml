@@ -13,6 +13,80 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /console:
+    get:
+      security: []
+      operationId: operatorConsole
+      responses:
+        "200":
+          description: Light console shell; every data request requires authorization
+          content:
+            text/html:
+              schema: { type: string }
+  /v1/profiles:
+    post:
+      operationId: discoverProfiles
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/recover:
+    post:
+      operationId: recoverInventory
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/task-plans:
+    post:
+      operationId: listTaskPlans
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/leases/{lease_ref}/renew:
+    parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+    post:
+      operationId: renewLease
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/leases/{lease_ref}/mcp-list:
+    parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+    post:
+      operationId: governedMcpTools
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/leases/{lease_ref}/mcp-call:
+    parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+    post:
+      operationId: governedMcpCall
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/McpCallRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/jobs/{job_ref}/resume:
+    parameters: [{ $ref: "#/components/parameters/JobRef" }]
+    post:
+      operationId: resumeJobLogs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JobResumeRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/audit/query:
+    post:
+      operationId: queryDurableAudit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AuditQueryRequest" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
   /healthz:
     get:
       security: []
@@ -667,6 +741,34 @@ components:
       properties:
         decision: { type: string, enum: [approve, deny], default: approve }
         reason: { type: string, maxLength: 1024 }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    McpCallRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name: { type: string, maxLength: 128 }
+        arguments: { type: object }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    JobResumeRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        stdout_offset: { type: integer, minimum: 0, maximum: 9007199254740992 }
+        stderr_offset: { type: integer, minimum: 0, maximum: 9007199254740992 }
+        max_bytes: { type: integer, minimum: 1, maximum: 1048576 }
+        request_id: { $ref: "#/components/schemas/RequestId" }
+    AuditQueryRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        limit: { type: integer, minimum: 1, maximum: 500 }
+        before: { type: integer, minimum: 1 }
+        action: { type: string, maxLength: 128 }
+        operation_id: { type: string, maxLength: 128 }
+        lease_ref: { type: string, maxLength: 128 }
+        task_ref: { type: string, maxLength: 128 }
+        backend_id: { type: string, maxLength: 128 }
         request_id: { $ref: "#/components/schemas/RequestId" }
     Error:
       type: object

@@ -86,7 +86,7 @@ def main() -> None:
 
     hermes_context = HermesContext(adapter_url)
     register(hermes_context)
-    assert len(hermes_context.tools) == 19
+    assert len(hermes_context.tools) == 25
 
     def call_hermes(name: str, params: dict[str, Any]) -> dict[str, Any]:
         raw = hermes_context.tools[name]["handler"](
@@ -101,7 +101,7 @@ def main() -> None:
     result = {
         "result": "PASS",
         "clients": [codex, hermes],
-        "tools_per_client": 19,
+        "tools_per_client": 25,
         "trusted_task_tools_per_client": 6,
     }
     serialized = json.dumps(result, indent=2, sort_keys=True) + "\n"

@@ -25,6 +25,11 @@ return only short Sandbox references to the model.
 > and approved trusted-task workflows. Deployment-specific hardening and
 > acceptance tests are still required in every target CubeSandbox environment.
 
+Unreleased main adds [multi-backend routing, internal templates, governed MCP,
+task recovery and PostgreSQL required audit](docs/production-features.md), plus a
+Light audit/approval console. Build current source to use these capabilities;
+the published v0.5.0 images do not contain them.
+
 ## Start here
 
 Follow this order: **prepare CubeSandbox → deploy the Adapter → connect one
@@ -266,12 +271,13 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
 
 ## What is included
 
-- authenticated Python Adapter using the pinned `cubesandbox==0.7.0` SDK, with
-  full Adapter acceptance on CubeSandbox v0.7.1; the
+- current-source authenticated Python Adapter using pinned `cubesandbox==0.7.3`; the
   [v0.7.3 test/production upgrades, snapshot/MCP canaries and Light screenshots](docs/cubesandbox-upstream.md)
-  passed, while full live Adapter/client acceptance remains pending;
+  passed, followed by [current-source Adapter acceptance and an authorized
+  production image upgrade](docs/production-features.md#validation-and-light-ui-evidence).
+  Full per-Agent application acceptance of the new features remains pending;
 - fail-closed declarative profiles with persistent-volume and checkpoint gates;
-- OpenClaw, DSH and Hermes plugins with 19 compatible execution, file, async
+- current-source OpenClaw, DSH and Hermes plugins with 25 tools (19 existing plus 6 new), covering execution, file, async
   job, checkpoint, and trusted-task tools, plus an MCP facade for Codex,
   Claude Code and OpenCode;
 - DSH Cordis Plugin and a patch that disables common host Shell/FS tools;
@@ -279,8 +285,8 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
 - one-command installers for Kubernetes, OpenClaw, DSH, Hermes Agent and OpenCode;
 - Docker Compose for local development;
 - Helm chart, plain Kubernetes manifest, tests and release workflows;
-- Redis-backed encrypted recovery and distributed locking (multi-replica only
-  with the explicit `best_effort` audit downgrade);
+- Redis-backed encrypted recovery and distributed locking; the unreleased
+  PostgreSQL path supports multi-replica `required` audit;
 - per-tenant bearer, OIDC and TLS/mTLS authentication;
 - Prometheus metrics, dependency-aware readiness and pluggable audit sinks;
 - an official-SDK MCP stdio facade;
@@ -298,8 +304,9 @@ kube-prometheus-stack monitors, and the Grafana dashboard are documented in
 
 For office-network Agents calling one or more production CubeSandbox clusters,
 read [the production and multi-cluster boundary](docs/multi-cluster-production.md).
-Today one Adapter process binds to one backend; deploy one isolated Adapter
-release per backend. Allow both CubeAPI and CubeProxy traffic—CubeAPI-only
+The v0.5.0 release binds one process to one backend; current source supports
+operator-approved multi-backend Profiles. See [new capabilities](docs/production-features.md).
+Allow both CubeAPI and CubeProxy traffic—CubeAPI-only
 access can create a sandbox but cannot carry command, file, PTY or job results.
 
 ## Prerequisites
@@ -460,7 +467,7 @@ Doctor in CI mode. Start a new restricted session afterward:
 hermes -t cube-adapter
 ```
 
-The plugin registers all 19 general execution and trusted-task tools.
+Current-source plugins register 25 tools; the v0.5.0 release registers 19.
 With Hermes tool compression enabled, these tools may initially appear through
 the built-in `tool_describe` / `tool_call` catalog instead of being copied into
 the model prompt directly; this is expected and was covered by the real test.
@@ -693,7 +700,7 @@ Prometheus scraper and `networkPolicy.extraEgress` for external OIDC JWKS or
 HTTP audit collectors. Same-namespace Redis egress is generated automatically;
 set `redisNamespace` and optionally `redisPodSelector` for a remote namespace.
 
-`cubesandbox==0.7.0` does not read `CUBE_PROXY_SCHEME`; do not copy that variable
+`cubesandbox==0.7.3` does not read `CUBE_PROXY_SCHEME`; do not copy that variable
 from another SDK without checking the SDK version in use.
 
 ## Test and verify

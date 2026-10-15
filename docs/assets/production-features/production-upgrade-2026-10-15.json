@@ -1,0 +1,43 @@
+{
+  "result": "PASS",
+  "scope": "authorized production Adapter image-only upgrade",
+  "sdk": "0.7.3",
+  "deployment": {
+    "image_digest": "sha256:4d59c9684b2f8708cc85c7407fc973054f8e080ecc069d7dec3fbf6d42f18da9",
+    "revision_before": "6",
+    "revision_after": "7",
+    "replicas": 1,
+    "ready_replicas": 1,
+    "only_image_changed": true,
+    "audit_pvc_preserved": true,
+    "rollback_revision": "6"
+  },
+  "checks": {
+    "production_image_pull_and_nonroot_imports": "PASS",
+    "readiness": "PASS",
+    "profile-discovery": "PASS",
+    "create-execute-status": "PASS",
+    "disabled-features-remain-denied": "PASS",
+    "durable-history-query": "PASS"
+  },
+  "audit_preserved": {
+    "historical_events": 145736,
+    "historical_rows_unchanged": true,
+    "original_rows_sha256": "db4f4a2478c189286ae3bae654ec3057fc2546f95c34714f6c1b196d72ae613e",
+    "quick_check": "ok",
+    "incomplete_operations": 0,
+    "chain": {
+      "hashed_events": 41,
+      "legacy_unhashed_events": 145742,
+      "chain_tip": "8a2e352638035319117572084b70b18a7ef25d74bf12c0f40294912ca7ef228c"
+    }
+  },
+  "features_enabled": {
+    "console": false,
+    "keepalive": false,
+    "mcp": false,
+    "postgresql": false
+  },
+  "test_sandbox_deleted": true,
+  "release_published": false
+}

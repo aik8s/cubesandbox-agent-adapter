@@ -1,0 +1,34 @@
+{
+  "backend": "v0.7.3",
+  "checks": {
+    "backend-and-template-binding": "PASS",
+    "governed-mcp": "PASS",
+    "independent-approval-receipt": "PASS",
+    "job-renew-restart-resume": "PASS",
+    "mcp-template": "PASS",
+    "persistent-audit-query": "PASS",
+    "two-process-required-audit": "PASS"
+  },
+  "cleanup": {
+    "details": [],
+    "isolated_db_retained_for_restore_drill": true,
+    "sandbox_and_template_errors": 0
+  },
+  "long_job": {
+    "automatic_resume": false,
+    "command_restarted": false,
+    "initial_timeout_seconds": 15,
+    "job_sleep_seconds": 35,
+    "renewal_events": 6,
+    "timeout_action": "kill"
+  },
+  "result": "PASS",
+  "routing": "Two logical bindings to one sr1 backend; no production-cluster mutation",
+  "sdk": "0.7.3",
+  "suite": "production-features",
+  "template_config": {
+    "model_api_response": "NOT_TESTED",
+    "structural_preflight": "PASS",
+    "version": "internal-test.1"
+  }
+}

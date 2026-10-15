@@ -7,6 +7,7 @@ The containing directory must be on durable local/block storage (not NFS).
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 import sqlite3
@@ -92,11 +93,19 @@ class AuditJournal:
             )
 
     def _insert(self, event: dict[str, Any]) -> dict[str, Any]:
+        previous = self.db.execute(
+            "SELECT payload FROM events ORDER BY seq DESC LIMIT 1"
+        ).fetchone()
         value = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             **event,
             "event_id": uuid.uuid4().hex,
+            "previous_sha256": json.loads(previous[0]).get("event_sha256", "") if previous else "",
         }
+        value.pop("event_sha256", None)
+        value["event_sha256"] = hashlib.sha256(
+            json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()
+        ).hexdigest()
         cursor = self.db.execute(
             "INSERT INTO events(event_id,payload) VALUES (?,?)",
             (value["event_id"], json.dumps(value, sort_keys=True)),
@@ -151,6 +160,39 @@ class AuditJournal:
                     ).fetchall()
                 )
             ]
+
+    def query(
+        self, *, limit: int = 100, before: int | None = None, filters: dict[str, str] | None = None
+    ) -> dict[str, Any]:
+        clauses: list[str] = []
+        parameters: list[Any] = []
+        if before is not None:
+            clauses.append("seq < ?")
+            parameters.append(before)
+        for key, value in (filters or {}).items():
+            if key not in {
+                "action",
+                "operation_id",
+                "lease_ref",
+                "task_ref",
+                "backend_id",
+                "tenant_hash",
+            }:
+                raise ValueError("unsupported audit filter")
+            clauses.append("json_extract(payload, ?) = ?")
+            parameters.extend(["$." + key, value])
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        with self._lock:
+            rows = self.db.execute(
+                "SELECT seq,payload FROM events" + where + " ORDER BY seq DESC LIMIT ?",  # noqa: S608 -- fixed clauses, bound values
+                [*parameters, limit + 1],
+            ).fetchall()
+        events = [{"seq": row[0], **json.loads(row[1])} for row in rows[:limit]]
+        return {
+            "events": events,
+            "next_cursor": events[-1]["seq"] if len(rows) > limit else None,
+            "durable": True,
+        }
 
     def counts(self) -> tuple[int, int]:
         with self._lock:

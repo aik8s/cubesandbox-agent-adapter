@@ -6,20 +6,29 @@ kind: Deployment
 {{- if not (has .Values.audit.mode (list "required" "best_effort")) }}
 {{- fail "audit.mode must be required or best_effort" }}
 {{- end }}
-{{- if and (eq .Values.audit.mode "required") (or (ne (int .Values.replicaCount) 1) (not .Values.audit.persistence.enabled)) }}
+{{- if and (eq .Values.audit.mode "required") (not .Values.audit.postgresql.enabled) (or (ne (int .Values.replicaCount) 1) (not .Values.audit.persistence.enabled)) }}
 {{- fail "required audit needs replicaCount=1 and audit.persistence.enabled=true (durable local/block PVC, not NFS)" }}
 {{- end }}
 {{- if and (eq .Values.audit.mode "required") (has (toString .Values.image.tag) (list "v0.4.0" "0.4.0")) }}
 {{- fail "v0.4.0 does not support required audit; use v0.5.0 or set audit.mode=best_effort as an explicit downgrade" }}
 {{- end }}
 metadata:
+{{- if and .Values.audit.postgresql.enabled (ne .Values.audit.mode "required") }}
+{{- fail "PostgreSQL audit requires audit.mode=required" }}
+{{- end }}
+{{- if and .Values.audit.postgresql.enabled (not .Values.audit.postgresql.existingSecret) }}
+{{- fail "PostgreSQL audit requires an existing DSN Secret" }}
+{{- end }}
+{{- if and .Values.audit.postgresql.enabled (gt (int .Values.replicaCount) 1) .Values.audit.persistence.enabled }}
+{{- fail "PostgreSQL multi-replica audit uses the database as authority; disable the shared SQLite/file PVC" }}
+{{- end }}
   name: {{ include "cubesandbox-agent-adapter.fullname" . }}
   labels:
     {{- include "cubesandbox-agent-adapter.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   strategy:
-    {{- if eq .Values.audit.mode "required" }}
+    {{- if and (eq .Values.audit.mode "required") (not .Values.audit.postgresql.enabled) }}
     type: Recreate
     {{- else }}
     type: RollingUpdate
@@ -68,6 +77,27 @@ spec:
               value: {{ ternary "1" "0" .Values.adapter.adminEnabled | quote }}
             - name: CUBE_ADAPTER_READINESS_CACHE_SECONDS
               value: {{ .Values.adapter.readinessCacheSeconds | quote }}
+            - name: CUBE_ADAPTER_KEEPALIVE_INTERVAL
+              value: {{ .Values.adapter.keepaliveIntervalSeconds | quote }}
+            - name: CUBE_ADAPTER_REPLICAS
+              value: {{ .Values.replicaCount | quote }}
+            {{- if .Values.audit.postgresql.enabled }}
+            - name: CUBE_ADAPTER_AUDIT_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.audit.postgresql.existingSecret }}
+                  key: {{ .Values.audit.postgresql.urlKey }}
+            - name: CUBE_ADAPTER_AUDIT_DATABASE_SCHEMA
+              value: {{ .Values.audit.postgresql.schema | quote }}
+            - name: CUBE_ADAPTER_AUDIT_REQUIRE_SYNC_REPLICA
+              value: {{ ternary "1" "0" .Values.audit.postgresql.requireSyncReplica | quote }}
+            {{- end }}
+            {{- range $name, $settings := dict "backends" .Values.backends "template-presets" .Values.templatePresets "mcp-policies" .Values.mcpPolicies }}
+            {{- if $settings.existingConfigMap }}
+            - name: {{ index (dict "backends" "CUBE_ADAPTER_BACKENDS_FILE" "template-presets" "CUBE_ADAPTER_TEMPLATE_PRESETS_FILE" "mcp-policies" "CUBE_ADAPTER_MCP_POLICIES_FILE") $name }}
+              value: /etc/cube-adapter/{{ $name }}/{{ $settings.key }}
+            {{- end }}
+            {{- end }}
             - name: CUBE_ADAPTER_AUDIT_SINKS
               value: {{ join "," .Values.audit.sinks | quote }}
             - name: CUBE_ADAPTER_PROFILES_FILE
@@ -199,6 +229,18 @@ spec:
             runAsNonRoot: true
             runAsUser: 65532
           volumeMounts:
+            {{- range $name, $settings := dict "backends" .Values.backends "template-presets" .Values.templatePresets "mcp-policies" .Values.mcpPolicies }}
+            {{- if $settings.existingConfigMap }}
+            - name: {{ $name }}
+              mountPath: /etc/cube-adapter/{{ $name }}
+              readOnly: true
+            {{- end }}
+            {{- end }}
+            {{- range $index, $secret := .Values.configurationSecrets }}
+            - name: config-secret-{{ $index }}
+              mountPath: {{ $secret.mountPath }}
+              readOnly: true
+            {{- end }}
             - name: audit
               mountPath: /var/log/cube-adapter
             - name: tmp
@@ -228,6 +270,22 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       volumes:
+        {{- range $name, $settings := dict "backends" .Values.backends "template-presets" .Values.templatePresets "mcp-policies" .Values.mcpPolicies }}
+        {{- if $settings.existingConfigMap }}
+        - name: {{ $name }}
+          configMap:
+            name: {{ $settings.existingConfigMap }}
+            items:
+              - key: {{ $settings.key }}
+                path: {{ $settings.key }}
+        {{- end }}
+        {{- end }}
+        {{- range $index, $secret := .Values.configurationSecrets }}
+        - name: config-secret-{{ $index }}
+          secret:
+            secretName: {{ $secret.name }}
+            defaultMode: 0440
+        {{- end }}
         - name: audit
           {{- if .Values.audit.persistence.enabled }}
           persistentVolumeClaim:

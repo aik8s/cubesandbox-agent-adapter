@@ -22,7 +22,8 @@ list_files stat_file make_dir remove_file move_file artifact_upload artifact_dow
 job_start job_status job_output job_cancel pty_create pty_status pty_input pty_resize
 pty_kill checkpoint_create checkpoint_list checkpoint_rollback checkpoint_delete
 checkpoint_fork list_task_templates task_plan task_approve task_plan_status
-task_submit task_status task_result task_cancel task_receipt force_gc _run_gc""".split()
+task_submit task_status task_result task_cancel task_receipt force_gc _run_gc
+discover mcp_list mcp_call lease_renew job_resume recover task_plans audit_query""".split()
 )
 _parent: ContextVar[str | None] = ContextVar("audit_operation", default=None)
 
@@ -36,6 +37,8 @@ def audited_adapter(cls: Any) -> Any:
 
 
 def _wrap_stream(method: Callable[..., Any]) -> Callable[..., Any]:
+    signature = inspect.signature(method)
+
     @functools.wraps(method)
     def stream(self: Any, *args: Any, **kwargs: Any) -> Any:
         journal = self.audit.journal
@@ -45,7 +48,20 @@ def _wrap_stream(method: Callable[..., Any]) -> Callable[..., Any]:
         from .core import AdapterError
 
         operation_id = uuid.uuid4().hex
-        event = {"operation_id": operation_id, "action": method.__name__, "runtime": "adapter"}
+        event: dict[str, Any] = {
+            "operation_id": operation_id,
+            "action": method.__name__,
+            "runtime": "adapter",
+        }
+        bound = signature.bind(self, *args, **kwargs).arguments
+        auth = bound.get("auth")
+        if isinstance(auth, AuthContext):
+            event["identity_hash"] = self._identity_hash(auth)
+            event["tenant_hash"] = hashlib.sha256(auth.tenant_id.encode()).hexdigest()[:16]
+        for key in ("job_ref", "pty_ref"):
+            value = bound.get(key)
+            if isinstance(value, str) and re.fullmatch(r"[a-z-]+_[a-f0-9]{20}", value):
+                event[key] = value
         try:
             journal.append({**event, "phase": "intent", "outcome": "pending"}, begin=operation_id)
             try:
@@ -93,6 +109,7 @@ def _wrap(method: Callable[..., Any]) -> Callable[..., Any]:
             event["parent_operation_id"] = _parent.get()
         if isinstance(auth, AuthContext):
             event["identity_hash"] = self._identity_hash(auth)
+            event["tenant_hash"] = hashlib.sha256(auth.tenant_id.encode()).hexdigest()[:16]
         # Only opaque server-generated references, never commands/parameters/tokens.
         if isinstance(bound.get("body"), dict):
             event["request_hmac_sha256"] = hmac.new(
@@ -132,6 +149,9 @@ def _wrap(method: Callable[..., Any]) -> Callable[..., Any]:
             completion = {**event, "phase": "result", "outcome": "ok"}
             if isinstance(result, AuthContext):
                 completion["identity_hash"] = self._identity_hash(result)
+                completion["tenant_hash"] = hashlib.sha256(result.tenant_id.encode()).hexdigest()[
+                    :16
+                ]
             if isinstance(result, dict):
                 for key in (
                     "lease_ref",

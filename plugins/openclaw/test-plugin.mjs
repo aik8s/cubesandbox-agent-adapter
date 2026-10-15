@@ -53,6 +53,7 @@ try {
       "cube_task_result",
       "cube_task_cancel",
       "cube_task_receipt",
+      "cube_mcp_list", "cube_mcp_call", "cube_renew", "cube_profiles", "cube_recover", "cube_job_resume",
     ],
   );
   const exec = registrations[0].definition({ sessionKey: "openclaw-session-42" });
@@ -74,6 +75,11 @@ try {
   );
   assert.ok(calls[2].url.endsWith("/v1/tasks/plan"));
   assert.equal(calls[2].body.template, "train-logistic");
+  const mcpCall = registrations.find(({ options, definition }) => (options.name || definition.name) === "cube_mcp_call").definition({ sessionKey: "same-session" });
+  await mcpCall.execute("call-3", { profile: "production-code", name: "echo", arguments: { text: "test" } }, new AbortController().signal);
+  assert.equal(calls[3].body.profile, "production-code");
+  assert.ok(calls[4].url.endsWith("/mcp-call"));
+  assert.equal(calls[4].body.profile, undefined);
   console.log("OpenClaw Cube Adapter plugin test: OK");
 } finally {
   globalThis.fetch = originalFetch;

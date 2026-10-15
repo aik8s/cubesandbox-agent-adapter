@@ -1,0 +1,13 @@
+backends:
+  staging:
+    api_url: https://cube-api-staging.example.invalid
+    api_key: ${FILE:/etc/cube-secrets/backends/staging-key}
+    proxy_host: cube-proxy-staging.internal.example.invalid
+    proxy_port: 80
+    sandbox_domain: cube.app
+  production:
+    api_url: https://cube-api-production.example.invalid
+    api_key: ${FILE:/etc/cube-secrets/backends/production-key}
+    proxy_host: cube-proxy-production.internal.example.invalid
+    proxy_port: 80
+    sandbox_domain: cube.app

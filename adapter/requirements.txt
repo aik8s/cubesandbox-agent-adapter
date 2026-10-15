@@ -1,4 +1,4 @@
-cubesandbox==0.7.0
+cubesandbox==0.7.3
 cryptography>=50,<51
 mcp>=2.0,<3
 prometheus-client>=0.21,<1
@@ -6,3 +6,4 @@ PyJWT[crypto]>=2.10,<3
 PyYAML>=6.0.2,<7
 jsonschema>=4.25,<5
 redis>=5.2,<7
+psycopg[binary]>=3.2,<4

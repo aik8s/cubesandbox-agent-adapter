@@ -53,6 +53,7 @@ try {
     "cube_task_result",
     "cube_task_cancel",
     "cube_task_receipt",
+    "cube_mcp_list", "cube_mcp_call", "cube_renew", "cube_profiles", "cube_recover", "cube_job_resume",
   ]);
   assert.equal(prompts.length, 1);
   const result = await tools[0].execute(

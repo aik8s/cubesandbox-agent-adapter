@@ -7,23 +7,32 @@ import hashlib
 import hmac
 import html
 import json
-import os
 import re
 import shlex
 import socket
 import threading
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import PurePosixPath
 from typing import Any, Callable, Dict, Iterator, Optional, Tuple
 
-from cubesandbox import PtySize, Sandbox, SandboxNotFoundError, Template, Volume, VolumeMount
+from cubesandbox import (
+    PtySize,
+    Sandbox,
+    SandboxNotFoundError,
+    Template,
+    Volume,
+    VolumeMount,
+    VolumeNotFoundError,
+)
 
 from .audit import AuditManager
 from .audited import audited_adapter
 from .auth import Authenticator, AuthFailure
+from .backend_config import BackendConfig, BackendRegistry
 from .config import AdapterConfig, AuthContext, ProfileConfig
+from .mcp_policy import GatewayClient, load_mcp_policies
 from .metrics import AdapterMetrics
 from .state import (
     CheckpointRecord,
@@ -35,6 +44,7 @@ from .state import (
     build_state_store,
 )
 from .task_config import TaskOutputConfig, TaskTemplateConfig
+from .template_config import load_template_presets
 
 VERSION = "0.5.0"
 MAX_BODY_BYTES = 16 * 1024 * 1024
@@ -103,12 +113,9 @@ def _safe_path(value: Any) -> str:
         raise AdapterError(403, "path_denied", "path traversal is not allowed")
     normalized = str(candidate)
     if not any(
-        normalized == root or normalized.startswith(root + "/")
-        for root in ALLOWED_FILE_ROOTS
+        normalized == root or normalized.startswith(root + "/") for root in ALLOWED_FILE_ROOTS
     ):
-        raise AdapterError(
-            403, "path_denied", "path must remain under /workspace or /tmp"
-        )
+        raise AdapterError(403, "path_denied", "path must remain under /workspace or /tmp")
     return normalized
 
 
@@ -143,13 +150,39 @@ class CubeAdapter:
         state_store: Optional[StateStore] = None,
         metrics: Optional[AdapterMetrics] = None,
         audit: Optional[AuditManager] = None,
+        mcp_client_factory: Callable[..., Any] = GatewayClient,
         start_gc: bool = True,
     ) -> None:
         self.config = config
         self.profiles = config.profiles()
-        self.task_templates: Dict[str, TaskTemplateConfig] = config.task_templates(
-            self.profiles
-        )
+        if any(
+            profile.keepalive_enabled
+            and config.keepalive_interval_seconds * 2 >= profile.sandbox_timeout_seconds
+            for profile in self.profiles.values()
+        ):
+            raise RuntimeError("keepalive interval must be less than half the sandbox timeout")
+        self.backends = BackendRegistry(config.backends_file)
+        self.template_presets = load_template_presets(config.template_presets_file)
+        self.mcp_policies = load_mcp_policies(config.mcp_policies_file)
+        for name, profile in list(self.profiles.items()):
+            self.backends.get(profile.backend_id)
+            if profile.mcp_policy:
+                if profile.mcp_policy not in self.mcp_policies:
+                    raise RuntimeError("profile MCP policy is not registered")
+                if profile.network.get("allow_public_traffic") is not False:
+                    raise RuntimeError("governed MCP requires private sandbox traffic")
+                if profile.checkpoints_enabled:
+                    raise RuntimeError(
+                        "MCP checkpoints require token-rotation-safe capture; disable checkpoints on MCP profiles"
+                    )
+            if profile.template_preset:
+                preset = self.template_presets.get(profile.template_preset)
+                if preset is None or preset.backend_id != profile.backend_id:
+                    raise RuntimeError(
+                        "profile template preset is missing or belongs to another backend"
+                    )
+                self.profiles[name] = replace(profile, template=preset.template)
+        self.task_templates: Dict[str, TaskTemplateConfig] = config.task_templates(self.profiles)
         self.authenticator = Authenticator(config)
         self.metrics = metrics or AdapterMetrics()
         self.state = state_store or build_state_store(
@@ -157,6 +190,14 @@ class CubeAdapter:
             prefix=config.state_prefix,
             encryption_key=config.state_encryption_key,
         )
+        if config.replicas > 1 and (
+            not self.state.durable
+            or (config.audit_mode == "required" and not config.audit_database_url)
+        ):
+            self.state.close()
+            raise RuntimeError(
+                "multiple replicas require durable state and a PostgreSQL required-audit authority"
+            )
         self.audit = audit or AuditManager.from_config(config, self.metrics)
         self._sandbox_factory = sandbox_factory
         self._sandbox_connector = sandbox_connector
@@ -165,6 +206,7 @@ class CubeAdapter:
         self._volume_destroyer = volume_destroyer
         self._template_checker = template_checker
         self._snapshot_deleter = snapshot_deleter
+        self._mcp_client_factory = mcp_client_factory
         self._handles: Dict[str, Any] = {}
         self._handles_lock = threading.RLock()
         self._readiness = ReadinessCache()
@@ -181,9 +223,7 @@ class CubeAdapter:
         self, authorization: Optional[str], *, peer_subject: Optional[str] = None
     ) -> AuthContext:
         try:
-            return self.authenticator.authenticate(
-                authorization, peer_subject=peer_subject
-            )
+            return self.authenticator.authenticate(authorization, peer_subject=peer_subject)
         except AuthFailure as error:
             raise AdapterError(error.status, error.code, error.message) from error
 
@@ -194,9 +234,7 @@ class CubeAdapter:
 
     # Lease lifecycle ------------------------------------------------
 
-    def acquire(
-        self, body: Dict[str, Any], auth: Optional[AuthContext] = None
-    ) -> Dict[str, Any]:
+    def acquire(self, body: Dict[str, Any], auth: Optional[AuthContext] = None) -> Dict[str, Any]:
         auth = auth or _default_auth()
         started = time.perf_counter()
         runtime = _required_string(body, "runtime", 32).lower()
@@ -216,18 +254,43 @@ class CubeAdapter:
 
         session_hash = hmac.new(
             self.config.session_hmac_key.encode("utf-8"),
-            f"{auth.tenant_id}\0{session_key}".encode("utf-8"),
+            (
+                f"{auth.tenant_id}\0{session_key}"
+                if profile.backend_id == "default" and profile.name == "offline-code"
+                else f"{auth.tenant_id}\0{profile.backend_id}\0{profile.name}\0{session_key}"
+            ).encode("utf-8"),
             hashlib.sha256,
         ).hexdigest()[:24]
         request_id = _request_id(body.get("request_id"))
         session_lock = f"session:{auth.tenant_id}:{runtime}:{session_hash}"
 
         with self.state.lock(session_lock, self.config.lock_ttl_seconds):
-            existing_ref = self.state.get_session(
-                auth.tenant_id, runtime, session_hash
-            )
+            existing_ref = self.state.get_session(auth.tenant_id, runtime, session_hash)
             existing = self.state.get_lease(existing_ref) if existing_ref else None
+            if (
+                existing is None
+                and profile.backend_id == "default"
+                and profile.name != "offline-code"
+            ):
+                legacy_hash = hmac.new(
+                    self.config.session_hmac_key.encode(),
+                    f"{auth.tenant_id}\0{session_key}".encode(),
+                    hashlib.sha256,
+                ).hexdigest()[:24]
+                legacy_ref = self.state.get_session(auth.tenant_id, runtime, legacy_hash)
+                candidate = self.state.get_lease(legacy_ref) if legacy_ref else None
+                if (
+                    candidate
+                    and candidate.profile == profile.name
+                    and candidate.backend_id == "default"
+                ):
+                    existing = candidate
             if existing and existing.state != "released":
+                if existing.profile != profile.name or existing.backend_id != profile.backend_id:
+                    raise AdapterError(
+                        409, "session_policy_conflict", "session is bound to a different policy"
+                    )
+                self._backend(existing)
                 reused = self._reuse_or_expire_lease(existing, request_id, started)
                 if reused is not None:
                     return reused
@@ -266,13 +329,61 @@ class CubeAdapter:
                 create_args["distribution_scope"] = list(profile.distribution_scope)
             if volume_mounts:
                 create_args["volume_mounts"] = volume_mounts
+            backend = self.backends.get(profile.backend_id)
+            create_args.update(backend.kwargs())
+            if profile.mcp_policy:
+                create_args["mcp"] = self.mcp_policies[profile.mcp_policy].launch_config()
+            preset = self.template_presets.get(profile.template_preset or "")
+            preset_files: dict[str, str] = {}
+            if preset is not None:
+                env, preset_files = preset.materialize()
+                if env:
+                    create_args["env_vars"] = env
 
             try:
                 sandbox = self._sandbox_factory(**create_args)
+                gateway_token = None
+                if profile.mcp_policy:
+                    try:
+                        gateway_token = sandbox.get_mcp_token()
+                        if not isinstance(gateway_token, str) or not gateway_token:
+                            raise RuntimeError("gateway token is unavailable")
+                    except Exception as error:
+                        sandbox.kill()
+                        raise AdapterError(
+                            409, "mcp_setup_failed", "MCP setup failed; sandbox removed"
+                        ) from error
+                if preset is not None:
+                    try:
+                        for path, content in preset_files.items():
+                            sandbox.files.make_dir(str(PurePosixPath(path).parent), user="root")
+                            sandbox.files.write(path, content, user="root")
+                            result = sandbox.commands.run(
+                                "chmod 600 -- " + shlex.quote(path), user="root", timeout=30
+                            )
+                            if result.exit_code != 0:
+                                raise RuntimeError(
+                                    "template file permissions could not be restricted"
+                                )
+                        for argv in (preset.bootstrap_argv, preset.preflight_argv):
+                            if (
+                                argv
+                                and sandbox.commands.run(
+                                    shlex.join(argv), user="root", timeout=30
+                                ).exit_code
+                            ):
+                                raise RuntimeError("internal template preflight failed")
+                    except Exception as error:
+                        sandbox.kill()
+                        raise AdapterError(
+                            409,
+                            "template_setup_failed",
+                            "internal template setup failed; sandbox removed",
+                        ) from error
             except Exception:
                 if volume_owned and volume_id and not profile.workspace.retain_on_kill:
                     try:
-                        self._volume_destroyer(volume_id)
+                        self._volume_destroyer(volume_id, **backend.kwargs())
                     except Exception:
                         pass
                 raise
@@ -287,6 +398,11 @@ class CubeAdapter:
                 traffic_access_token=getattr(sandbox, "traffic_access_token", None),
                 volume_id=volume_id,
                 volume_owned=volume_owned,
+                volume_retain_on_kill=profile.workspace.retain_on_kill,
+                backend_id=profile.backend_id,
+                backend_fingerprint=backend.fingerprint,
+                template_version=preset.version if preset is not None else None,
+                mcp_gateway_token=gateway_token,
             )
             self.state.put_lease(lease)
             with self._handles_lock:
@@ -339,6 +455,8 @@ class CubeAdapter:
             "jobs": len(self.state.list_jobs(lease_ref=record.lease_ref)),
             "checkpoints": len(self.state.list_checkpoints(record.lease_ref)),
             "recoverable": self.state.durable,
+            "backend_id": record.backend_id,
+            "template_version": record.template_version,
         }
 
     def list_leases(self, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
@@ -398,7 +516,9 @@ class CubeAdapter:
                         self._handles.pop(record.lease_ref, None)
                 try:
                     for checkpoint in self.state.list_checkpoints(record.lease_ref):
-                        self._snapshot_deleter(checkpoint.snapshot_id)
+                        self._snapshot_deleter(
+                            checkpoint.snapshot_id, **self._backend(record).kwargs()
+                        )
                         self.state.delete_checkpoint(checkpoint)
                 except Exception as error:
                     self._audit(
@@ -453,9 +573,7 @@ class CubeAdapter:
                 try:
                     sandbox = self._sandbox(record)
                     sandbox.get_info()
-                    result = sandbox.commands.run(
-                        command, cwd=cwd, timeout=timeout_ms / 1000
-                    )
+                    result = sandbox.commands.run(command, cwd=cwd, timeout=timeout_ms / 1000)
                 except SandboxNotFoundError as error:
                     raise AdapterError(
                         410, "sandbox_expired", "sandbox no longer exists; acquire a new lease"
@@ -583,11 +701,7 @@ class CubeAdapter:
             "ok",
             started,
             path_sha256=_digest(path, 16),
-            **(
-                {"destination_sha256": _digest(destination, 16)}
-                if destination is not None
-                else {}
-            ),
+            **({"destination_sha256": _digest(destination, 16)} if destination is not None else {}),
         )
         return {
             "executor": "cubesandbox-microvm",
@@ -602,9 +716,7 @@ class CubeAdapter:
         auth = auth or _default_auth()
         record = self._lease(lease_ref, auth)
         path = _safe_path(body.get("path"))
-        encoded = _required_string(
-            body, "content_base64", (MAX_ARTIFACT_BYTES * 4 // 3) + 16
-        )
+        encoded = _required_string(body, "content_base64", (MAX_ARTIFACT_BYTES * 4 // 3) + 16)
         try:
             content = base64.b64decode(encoded, validate=True)
         except ValueError as error:
@@ -657,7 +769,9 @@ class CubeAdapter:
             try:
                 content = base64.b64decode(result.stdout, validate=True)
             except ValueError as error:
-                raise AdapterError(502, "invalid_artifact", "sandbox returned invalid data") from error
+                raise AdapterError(
+                    502, "invalid_artifact", "sandbox returned invalid data"
+                ) from error
             if len(content) > MAX_ARTIFACT_BYTES:
                 raise AdapterError(413, "artifact_too_large", "artifact exceeds the size limit")
             self._touch(record, "running")
@@ -702,22 +816,14 @@ class CubeAdapter:
         started = time.perf_counter()
         with self._lease_lock(record):
             if len(self._active_jobs_locked(record)) >= profile.max_jobs_per_lease:
-                raise AdapterError(
-                    429, "job_quota_exceeded", "active job quota has been reached"
-                )
+                raise AdapterError(429, "job_quota_exceeded", "active job quota has been reached")
             sandbox = self._sandbox(record)
-            prepared = sandbox.commands.run(
-                f"mkdir -p -- {shlex.quote(root)}", timeout=30
-            )
+            prepared = sandbox.commands.run(f"mkdir -p -- {shlex.quote(root)}", timeout=30)
             if prepared.exit_code != 0:
                 raise RuntimeError("failed to prepare asynchronous job directory")
             sandbox.files.write(
                 script_path,
-                "#!/bin/bash\nset +e\ncd -- "
-                + shlex.quote(cwd)
-                + "\n"
-                + command
-                + "\n",
+                "#!/bin/bash\nset +e\ncd -- " + shlex.quote(cwd) + "\n" + command + "\n",
             )
             wrapper = (
                 f"chmod 700 -- {shlex.quote(script_path)} && "
@@ -746,6 +852,7 @@ class CubeAdapter:
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
                 exit_path=exit_path,
+                backend_id=record.backend_id,
             )
             self.state.put_job(job)
             self._touch(record, "running")
@@ -767,9 +874,7 @@ class CubeAdapter:
             "state": "running",
         }
 
-    def job_status(
-        self, job_ref: str, auth: Optional[AuthContext] = None
-    ) -> Dict[str, Any]:
+    def job_status(self, job_ref: str, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
         auth = auth or _default_auth()
         job, record = self._job(job_ref, auth)
         self._refresh_job(job, record)
@@ -802,7 +907,8 @@ class CubeAdapter:
             **self._job_result(job, record),
             "offset": offset,
             "next_offset": offset + len(chunk),
-            "eof": offset + len(chunk) >= len(combined) and job.state not in {"running", "starting"},
+            "eof": offset + len(chunk) >= len(combined)
+            and job.state not in {"running", "starting"},
             "data": chunk.decode("utf-8", errors="replace"),
             "encoding": "json-fragment",
         }
@@ -901,9 +1007,7 @@ class CubeAdapter:
         started = time.perf_counter()
         with self._lease_lock(record):
             if len(self._active_jobs_locked(record)) >= profile.max_jobs_per_lease:
-                raise AdapterError(
-                    429, "job_quota_exceeded", "active job quota has been reached"
-                )
+                raise AdapterError(429, "job_quota_exceeded", "active job quota has been reached")
             handle = self._sandbox(record).pty.create(
                 PtySize(rows=rows, cols=cols), cwd=cwd, timeout=None
             )
@@ -918,6 +1022,7 @@ class CubeAdapter:
                 stdout_path="",
                 stderr_path="",
                 exit_path="",
+                backend_id=record.backend_id,
             )
             self.state.put_job(pty)
             self._touch(record, "running")
@@ -925,9 +1030,7 @@ class CubeAdapter:
         self._refresh_gauges()
         return {**self._pty_result(pty, record), "request_id": request_id}
 
-    def pty_status(
-        self, pty_ref: str, auth: Optional[AuthContext] = None
-    ) -> Dict[str, Any]:
+    def pty_status(self, pty_ref: str, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
         auth = auth or _default_auth()
         pty, record = self._pty(pty_ref, auth)
         self._refresh_pty(pty, record)
@@ -1058,6 +1161,7 @@ class CubeAdapter:
             snapshot = self._sandbox(record).create_snapshot(name=name)
             checkpoint = CheckpointRecord(
                 checkpoint_ref=f"checkpoint_{uuid.uuid4().hex[:20]}",
+                backend_id=record.backend_id,
                 lease_ref=record.lease_ref,
                 tenant_id=record.tenant_id,
                 snapshot_id=str(snapshot.snapshot_id),
@@ -1075,9 +1179,7 @@ class CubeAdapter:
         )
         return self._checkpoint_result(checkpoint, record, request_id)
 
-    def checkpoint_list(
-        self, lease_ref: str, auth: Optional[AuthContext] = None
-    ) -> Dict[str, Any]:
+    def checkpoint_list(self, lease_ref: str, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
         auth = auth or _default_auth()
         record = self._lease(lease_ref, auth)
         return {
@@ -1139,7 +1241,7 @@ class CubeAdapter:
         request_id = _request_id(body.get("request_id"))
         started = time.perf_counter()
         with self._lease_lock(record):
-            self._snapshot_deleter(checkpoint.snapshot_id)
+            self._snapshot_deleter(checkpoint.snapshot_id, **self._backend(record).kwargs())
             self.state.delete_checkpoint(checkpoint)
         self._audit(
             record,
@@ -1183,9 +1285,7 @@ class CubeAdapter:
             f"session:{source.tenant_id}:{source.runtime}:{session_hash}",
             self.config.lock_ttl_seconds,
         ):
-            existing_ref = self.state.get_session(
-                source.tenant_id, source.runtime, session_hash
-            )
+            existing_ref = self.state.get_session(source.tenant_id, source.runtime, session_hash)
             existing = self.state.get_lease(existing_ref) if existing_ref else None
             if existing and existing.state != "released":
                 self._audit(
@@ -1233,6 +1333,7 @@ class CubeAdapter:
                     if profile.distribution_scope
                     else {}
                 ),
+                **self._backend(source).kwargs(),
             )
             forked = LeaseRecord(
                 lease_ref=f"lease_{uuid.uuid4().hex[:20]}",
@@ -1243,6 +1344,9 @@ class CubeAdapter:
                 sandbox_id=str(sandbox.sandbox_id),
                 sandbox_ref=str(sandbox.sandbox_id)[:8],
                 traffic_access_token=getattr(sandbox, "traffic_access_token", None),
+                backend_id=source.backend_id,
+                backend_fingerprint=source.backend_fingerprint,
+                template_version=source.template_version,
             )
             self.state.put_lease(forked)
             with self._handles_lock:
@@ -1265,9 +1369,7 @@ class CubeAdapter:
 
     # Approved trusted tasks ---------------------------------------
 
-    def list_task_templates(
-        self, auth: Optional[AuthContext] = None
-    ) -> Dict[str, Any]:
+    def list_task_templates(self, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
         auth = auth or _default_auth()
         self.authorize(auth, "task:plan")
         return {
@@ -1279,9 +1381,7 @@ class CubeAdapter:
             ]
         }
 
-    def task_plan(
-        self, body: Dict[str, Any], auth: Optional[AuthContext] = None
-    ) -> Dict[str, Any]:
+    def task_plan(self, body: Dict[str, Any], auth: Optional[AuthContext] = None) -> Dict[str, Any]:
         auth = auth or _default_auth()
         self.authorize(auth, "task:plan")
         template_name = _required_string(body, "template", 63)
@@ -1297,9 +1397,9 @@ class CubeAdapter:
             raise AdapterError(400, "invalid_parameters", str(error)) from error
         if len(command.encode("utf-8")) > MAX_COMMAND_BYTES:
             raise AdapterError(413, "value_too_large", "rendered task command is too large")
-        parameter_bytes = json.dumps(
-            parameters, ensure_ascii=False, separators=(",", ":")
-        ).encode("utf-8")
+        parameter_bytes = json.dumps(parameters, ensure_ascii=False, separators=(",", ":")).encode(
+            "utf-8"
+        )
         if len(parameter_bytes) > MAX_FILE_BYTES:
             raise AdapterError(413, "value_too_large", "task parameters are too large")
         now = time.time()
@@ -1316,6 +1416,8 @@ class CubeAdapter:
             approval_required=template.approval_required,
             created_at=now,
             expires_at=now + template.plan_ttl_seconds,
+            backend_id=self.profiles[template.profile].backend_id,
+            runtime_policy_sha256=self._runtime_policy_digest(template.profile),
         )
         self.state.put_task_plan(plan)
         request_id = _request_id(body.get("request_id"))
@@ -1371,10 +1473,17 @@ class CubeAdapter:
                     hashlib.sha256(reason.encode("utf-8")).hexdigest() if reason else None
                 )
             if self.audit.journal is not None:
-                self._audit_task(auth, 'task_approval_decision', request_id, 'authorized', template,
-                                 plan_ref=plan.plan_ref, decision=decision,
-                                 parameters_sha256=plan.parameters_sha256,
-                                 command_sha256=plan.command_sha256)
+                self._audit_task(
+                    auth,
+                    "task_approval_decision",
+                    request_id,
+                    "authorized",
+                    template,
+                    plan_ref=plan.plan_ref,
+                    decision=decision,
+                    parameters_sha256=plan.parameters_sha256,
+                    command_sha256=plan.command_sha256,
+                )
             self.state.put_task_plan(plan)
         self._audit_task(
             auth,
@@ -1387,9 +1496,7 @@ class CubeAdapter:
         )
         return self._task_plan_result(plan)
 
-    def task_plan_status(
-        self, plan_ref: str, auth: Optional[AuthContext] = None
-    ) -> Dict[str, Any]:
+    def task_plan_status(self, plan_ref: str, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
         auth = auth or _default_auth()
         self.authorize(auth, "task:approve" if auth.can_approve_tasks else "task:status")
         plan = self._task_plan(plan_ref, auth)
@@ -1399,6 +1506,12 @@ class CubeAdapter:
         result["contract"] = template.public_contract()
         if auth.can_approve_tasks:
             result["parameters"] = plan.parameters
+            result["execution_contract"] = {
+                "command": template.render_command(plan.parameters),
+                "cwd": template.cwd,
+                "backend_id": plan.backend_id,
+                "profile": template.profile,
+            }
         return result
 
     def task_submit(
@@ -1431,13 +1544,21 @@ class CubeAdapter:
                 template_name=plan.template_name,
                 template_digest=plan.template_digest,
                 profile=template.profile,
+                backend_id=plan.backend_id,
             )
             if self.audit.journal is not None:
-                self._audit_task(auth, 'task_execution_authorized', request_id, 'authorized', template,
-                                 plan_ref=plan.plan_ref, task_ref=task.task_ref,
-                                 parameters_sha256=plan.parameters_sha256,
-                                 command_sha256=plan.command_sha256,
-                                 approver_hash=plan.approved_by_hash)
+                self._audit_task(
+                    auth,
+                    "task_execution_authorized",
+                    request_id,
+                    "authorized",
+                    template,
+                    plan_ref=plan.plan_ref,
+                    task_ref=task.task_ref,
+                    parameters_sha256=plan.parameters_sha256,
+                    command_sha256=plan.command_sha256,
+                    approver_hash=plan.approved_by_hash,
+                )
             plan.submitted_task_ref = task.task_ref
             plan.state = "submitted"
             self.state.put_task(task)
@@ -1506,17 +1627,15 @@ class CubeAdapter:
         )
         return self._task_result_value(task)
 
-    def task_status(
-        self, task_ref: str, auth: Optional[AuthContext] = None
-    ) -> Dict[str, Any]:
+    def task_status(self, task_ref: str, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
         auth = auth or _default_auth()
         self.authorize(auth, "task:status")
         task = self._task(task_ref, auth)
-        if task.state == "running" and task.job_ref:
+        if task.state in {"running", "unknown"} and task.job_ref:
             try:
                 job, record = self._job(task.job_ref, auth)
                 self._refresh_job(job, record)
-                task.state = job.state
+                task.state = "unknown" if job.last_observation == "unknown" else job.state
                 task.updated_at = time.time()
                 self.state.put_task(task)
             except AdapterError:
@@ -1526,9 +1645,7 @@ class CubeAdapter:
                 self.state.put_task(task)
         return self._task_result_value(task)
 
-    def task_result(
-        self, task_ref: str, auth: Optional[AuthContext] = None
-    ) -> Dict[str, Any]:
+    def task_result(self, task_ref: str, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
         auth = auth or _default_auth()
         self.authorize(auth, "task:result")
         return self._finalize_task(task_ref, auth)
@@ -1551,9 +1668,7 @@ class CubeAdapter:
             self.state.put_task(task)
         return self._finalize_task(task_ref, auth)
 
-    def task_receipt(
-        self, task_ref: str, auth: Optional[AuthContext] = None
-    ) -> Dict[str, Any]:
+    def task_receipt(self, task_ref: str, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
         auth = auth or _default_auth()
         self.authorize(auth, "task:receipt")
         task = self._task(task_ref, auth)
@@ -1564,6 +1679,273 @@ class CubeAdapter:
         return {"task_ref": task.task_ref, "receipt": task.receipt}
 
     # Health, metrics, and administration ----------------------------
+
+    def discover(self, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "lease:discover")
+        return {
+            "profiles": [
+                {
+                    "name": profile.name,
+                    "backend_id": profile.backend_id,
+                    "template_version": self.template_presets[profile.template_preset].version
+                    if profile.template_preset
+                    else None,
+                    "models": list(self.template_presets[profile.template_preset].models)
+                    if profile.template_preset
+                    else [],
+                    "mcp_enabled": bool(profile.mcp_policy),
+                    "keepalive_enabled": profile.keepalive_enabled,
+                }
+                for profile in self.profiles.values()
+                if auth.permits_profile(profile.name)
+            ]
+        }
+
+    def mcp_list(self, lease_ref: str, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "mcp:list")
+        record, policy = self._mcp_context(lease_ref, auth)
+        # Operator schemas are authoritative, never upstream-generated schemas
+        # or server instructions that could enlarge the client tool surface.
+        return {
+            "lease_ref": lease_ref,
+            "backend_id": record.backend_id,
+            "tools": [
+                {"name": name, "inputSchema": schema} for name, schema in policy.tools.items()
+            ],
+        }
+
+    def _mcp_context(self, lease_ref: str, auth: AuthContext) -> Tuple[Any, Any]:
+        record = self._lease(lease_ref, auth)
+        profile = self.profiles[record.profile]
+        if not auth.permits_profile(profile.name) or not profile.mcp_policy:
+            raise AdapterError(403, "mcp_denied", "MCP is not available for this profile")
+        self._backend(record)
+        policy = self.mcp_policies[profile.mcp_policy]
+        if not record.mcp_gateway_token:
+            raise AdapterError(409, "mcp_not_ready", "sandbox gateway token is unavailable")
+        return record, policy
+
+    def mcp_call(
+        self, lease_ref: str, body: Dict[str, Any], auth: Optional[AuthContext] = None
+    ) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "mcp:call")
+        record, policy = self._mcp_context(lease_ref, auth)
+        name = body.get("name")
+        try:
+            arguments = policy.validate(name, body.get("arguments", {}))
+        except ValueError as error:
+            raise AdapterError(400, "mcp_request_denied", str(error)) from error
+        started = time.perf_counter()
+        with self._lease_lock(record):
+            client = self._mcp_client_factory(
+                self._backend(record),
+                self._sandbox(record),
+                record.mcp_gateway_token,
+                record.traffic_access_token,
+                policy,
+            )
+            try:
+                client.initialize()
+                result = client.request("tools/call", {"name": name, "arguments": arguments})
+                result = {
+                    key: value
+                    for key, value in result.items()
+                    if key in {"content", "structuredContent", "isError"}
+                }
+                encoded = json.dumps(result, ensure_ascii=False)
+                if len(encoded.encode()) > policy.max_output_bytes:
+                    raise RuntimeError("MCP result exceeds the policy limit")
+                secrets = [
+                    record.mcp_gateway_token,
+                    record.traffic_access_token,
+                    self._backend(record).api_key,
+                ]
+                secrets.extend(policy.secret_values())
+                # Redact exact injected credentials before releasing the result.
+                for secret in sorted((item for item in secrets if item), key=len, reverse=True):
+                    encoded = encoded.replace(
+                        json.dumps(secret, ensure_ascii=False)[1:-1], "[REDACTED]"
+                    )
+                result = json.loads(encoded)
+                self._touch(record, "running")
+            except Exception as error:
+                raise AdapterError(
+                    502,
+                    "mcp_outcome_unknown",
+                    "MCP outcome could not be confirmed; operator reconciliation may be required",
+                ) from error
+            finally:
+                client.close()
+        self._audit(
+            record,
+            "mcp_call",
+            _request_id(body.get("request_id")),
+            "ok",
+            started,
+            tool_name=name,
+            arguments_sha256=self._json_digest(arguments),
+        )
+        return {"lease_ref": lease_ref, "backend_id": record.backend_id, "result": result}
+
+    def lease_renew(
+        self, lease_ref: str, body: Dict[str, Any], auth: Optional[AuthContext] = None
+    ) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "lease:renew")
+        record = self._lease(lease_ref, auth)
+        profile = self.profiles[record.profile]
+        if not auth.permits_profile(profile.name) or not profile.keepalive_enabled:
+            raise AdapterError(403, "renew_denied", "lease renewal is disabled by policy")
+        with self._lease_lock(record):
+            latest = self.state.get_lease(lease_ref)
+            if latest is None:
+                raise AdapterError(404, "lease_not_found", "lease was not found")
+            remaining = int(latest.created_at + profile.max_keepalive_seconds - time.time())
+            if remaining <= 0:
+                raise AdapterError(409, "renew_limit_reached", "maximum lease lifetime reached")
+            try:
+                self._sandbox(latest).set_timeout(min(profile.sandbox_timeout_seconds, remaining))
+            except SandboxNotFoundError as error:
+                raise AdapterError(409, "sandbox_expired", "sandbox no longer exists") from error
+            latest.last_renewed_at = time.time()
+            self._touch(latest, "running")
+        self._audit(
+            latest, "lease_renew", _request_id(body.get("request_id")), "ok", time.perf_counter()
+        )
+        return {
+            **self._lease_result(latest, reused=True),
+            "maximum_expires_at": _timestamp(latest.created_at + profile.max_keepalive_seconds),
+        }
+
+    def job_resume(
+        self, job_ref: str, body: Dict[str, Any], auth: Optional[AuthContext] = None
+    ) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "job:output")
+        job, record = self._job(job_ref, auth)
+        self._refresh_job(job, record)
+        maximum = body.get("max_bytes", MAX_OUTPUT_BYTES)
+        if (
+            isinstance(maximum, bool)
+            or not isinstance(maximum, int)
+            or not 1 <= maximum <= MAX_JOB_OUTPUT_BYTES
+        ):
+            raise AdapterError(400, "invalid_limit", "invalid log chunk size")
+        result = {
+            **self._job_result(job, record),
+            "backend_id": record.backend_id,
+            "restarted": False,
+        }
+        sandbox = self._sandbox(record)
+        for stream, path in (("stdout", job.stdout_path), ("stderr", job.stderr_path)):
+            offset = body.get(stream + "_offset", 0)
+            if isinstance(offset, bool) or not isinstance(offset, int) or not 0 <= offset <= 2**53:
+                raise AdapterError(400, "invalid_offset", "invalid log cursor")
+            # Read a byte range remotely, not the whole ever-growing log. Base64
+            # preserves UTF-8 split boundaries and independent stream cursors.
+            command = f"dd if={shlex.quote(path)} bs=1 skip={offset} count={maximum} status=none | base64 -w0"
+            chunk = sandbox.commands.run("bash -o pipefail -c " + shlex.quote(command), timeout=30)
+            if chunk.exit_code:
+                raise AdapterError(409, "log_unavailable", "job log is unavailable")
+            try:
+                raw = base64.b64decode(chunk.stdout.strip(), validate=True)
+            except ValueError as error:
+                raise AdapterError(
+                    409, "log_unavailable", "job log could not be decoded"
+                ) from error
+            if len(raw) > maximum:
+                raise AdapterError(409, "log_unavailable", "job log chunk exceeded limit")
+            result[stream] = {
+                "data_base64": base64.b64encode(raw).decode(),
+                "offset": offset,
+                "next_offset": offset + len(raw),
+                "eof": len(raw) < maximum and job.state not in {"running", "starting"},
+            }
+        return result
+
+    def recover(self, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "lease:status")
+        items = []
+        for record in self.state.list_leases(None if auth.is_admin else auth.tenant_id):
+            if not auth.permits_profile(record.profile):
+                continue
+            try:
+                state = str(self._sandbox(record).get_info().get("state", "unknown"))
+            except SandboxNotFoundError:
+                state = "expired"
+            except Exception:
+                state = "unknown"
+            items.append(
+                {"lease_ref": record.lease_ref, "backend_id": record.backend_id, "state": state}
+            )
+        tasks = [
+            self._task_result_value(task)
+            for task in self.state.list_tasks(None if auth.is_admin else auth.tenant_id)
+            if auth.permits_profile(task.profile)
+            and (auth.is_admin or task.requester_hash == self._identity_hash(auth))
+        ]
+        return {
+            "durable_state": self.state.durable,
+            "leases": items,
+            "tasks": tasks,
+            "commands_restarted": 0,
+            "note": "Inventory only; unknown or expired executions require operator review.",
+        }
+
+    def task_plans(self, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "task:approve" if auth.can_approve_tasks else "task:status")
+        items = []
+        for plan in self.state.list_task_plans(None if auth.is_admin else auth.tenant_id):
+            template = self.task_templates.get(plan.template_name)
+            if (
+                not template
+                or not auth.permits_profile(template.profile)
+                or not auth.permits_task_template(template.name)
+            ):
+                continue
+            if (
+                auth.can_approve_tasks
+                or auth.is_admin
+                or plan.requester_hash == self._identity_hash(auth)
+            ):
+                value = self._task_plan_result(plan)
+                if plan.expires_at <= time.time() and plan.state in {
+                    "pending_approval",
+                    "ready",
+                    "approved",
+                }:
+                    value["state"] = "expired"
+                items.append(value)
+        return {"plans": sorted(items, key=lambda item: item["created_at"], reverse=True)[:500]}
+
+    def audit_query(
+        self, body: Dict[str, Any], auth: Optional[AuthContext] = None
+    ) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "audit:read")
+        if not auth.is_admin and not auth.can_approve_tasks and "auditor" not in auth.roles:
+            raise AdapterError(403, "auditor_required", "auditor, approver or admin role required")
+        if self.audit.journal is None:
+            raise AdapterError(409, "durable_audit_required", "full history requires durable audit")
+        limit, before = body.get("limit", 100), body.get("before")
+        if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= 500:
+            raise AdapterError(400, "invalid_limit", "limit must be 1..500")
+        if before is not None and (
+            isinstance(before, bool) or not isinstance(before, int) or before < 1
+        ):
+            raise AdapterError(400, "invalid_cursor", "invalid history cursor")
+        filters: Dict[str, str] = {}
+        for key in ("action", "operation_id", "lease_ref", "task_ref", "backend_id"):
+            if key in body:
+                filters[key] = _required_string(body, key, 128)
+        if not auth.is_admin:
+            filters["tenant_hash"] = _digest(auth.tenant_id, 16)
+        return self.audit.journal.query(limit=limit, before=before, filters=filters)
 
     def health(self) -> Dict[str, Any]:
         return {
@@ -1576,7 +1958,7 @@ class CubeAdapter:
 
     def readiness(self, *, force: bool = False) -> Tuple[int, Dict[str, Any]]:
         if self.audit.journal is not None and self.audit.journal.failed:
-            return 503, {'status': 'not_ready', 'checks': {'audit': 'reconciliation_required'}}
+            return 503, {"status": "not_ready", "checks": {"audit": "reconciliation_required"}}
         with self._readiness_lock:
             now = time.monotonic()
             if (
@@ -1588,37 +1970,53 @@ class CubeAdapter:
                 return (200 if result["status"] == "ready" else 503, result)
             checks: Dict[str, Any] = {}
             checks["state"] = "ok" if self.state.health() else "error"
-            try:
-                for template in sorted({profile.template for profile in self.profiles.values()}):
-                    info = self._template_checker(template)
+            backend_checks: Dict[str, list[bool]] = {}
+            for backend_id, template in sorted(
+                {(profile.backend_id, profile.template) for profile in self.profiles.values()}
+            ):
+                key = (
+                    f"template:{template}"
+                    if backend_id == "default"
+                    else f"template:{backend_id}:{template}"
+                )
+                try:
+                    info = self._template_checker(
+                        template, **self.backends.get(backend_id).kwargs()
+                    )
                     status_value = getattr(info, "status", None)
                     if status_value is None and isinstance(info, dict):
                         status_value = info.get("status")
                     status = str(status_value or "unknown")
-                    checks[f"template:{template}"] = status.lower()
-            except Exception as error:
-                checks["cube_api"] = f"error:{type(error).__name__}"
-            proxy_host = os.environ.get("CUBE_PROXY_NODE_IP")
-            proxy_port = int(os.environ.get("CUBE_PROXY_PORT_HTTP", "80"))
-            if proxy_host:
+                    checks[key] = status.lower()
+                except Exception as error:
+                    checks[key] = f"error:{type(error).__name__}"
+                backend_checks.setdefault(backend_id, []).append(checks[key] == "ready")
+            for backend_id in sorted({profile.backend_id for profile in self.profiles.values()}):
+                backend = self.backends.get(backend_id)
+                if not backend.proxy_host:
+                    continue
+                key = "cube_proxy" if backend_id == "default" else f"cube_proxy:{backend_id}"
                 try:
-                    with socket.create_connection((proxy_host, proxy_port), timeout=2):
-                        checks["cube_proxy"] = "ok"
+                    with socket.create_connection(
+                        (backend.proxy_host, backend.proxy_port), timeout=2
+                    ):
+                        checks[key] = "ok"
                 except OSError:
-                    checks["cube_proxy"] = "error"
-            template_checks = [
-                value for key, value in checks.items() if key.startswith("template:")
-            ]
-            good = (
-                checks.get("state") == "ok"
-                and bool(template_checks)
-                and all(value == "ready" for value in template_checks)
-                and not any(str(value).startswith("error") for value in checks.values())
+                    checks[key] = "error"
+                backend_checks[backend_id].append(checks[key] == "ok")
+            availability = {
+                name: "ready" if all(values) else "not_ready"
+                for name, values in backend_checks.items()
+            }
+            good = checks.get("state") == "ok" and any(
+                value == "ready" for value in availability.values()
             )
             result = {
                 "status": "ready" if good else "not_ready",
                 "version": VERSION,
                 "checks": checks,
+                "backends": availability,
+                "degraded": any(value != "ready" for value in availability.values()),
             }
             self._readiness = ReadinessCache(checked_at=now, result=result)
             self.metrics.state_ready.set(1 if good else 0)
@@ -1711,15 +2109,17 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
             return None, None, False, {}
         if workspace.mode == "existing-volume":
             assert workspace.volume_id is not None
-            volume = self._volume_connector(workspace.volume_id)
-            mounted: Any = (
-                VolumeMount(volume, read_only=True) if workspace.read_only else volume
+            volume = self._volume_connector(
+                workspace.volume_id, **self.backends.get(profile.backend_id).kwargs()
             )
+            mounted: Any = VolumeMount(volume, read_only=True) if workspace.read_only else volume
             return volume, workspace.volume_id, False, {workspace.mount_path: mounted}
         name = workspace.volume_name or (
             "cwa-" + _digest(auth.tenant_id, 12) + "-" + session_hash[:20]
         )
-        volume = self._volume_factory(name, driver=workspace.driver)
+        volume = self._volume_factory(
+            name, driver=workspace.driver, **self.backends.get(profile.backend_id).kwargs()
+        )
         volume_id = str(getattr(volume, "volume_id", name))
         mounted = VolumeMount(volume, read_only=True) if workspace.read_only else volume
         return volume, volume_id, True, {workspace.mount_path: mounted}
@@ -1758,10 +2158,33 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
                 "task_template_changed",
                 "task template changed after the plan was created; create a new plan",
             )
+        # Legacy plans must be re-created: they did not bind execution policy.
+        if plan.runtime_policy_sha256 != self._runtime_policy_digest(template.profile):
+            raise AdapterError(
+                409, "runtime_policy_changed", "execution policy changed; create a new plan"
+            )
         return template
 
+    def _runtime_policy_digest(self, profile_name: str) -> str:
+        profile = self.profiles[profile_name]
+        preset = self.template_presets.get(profile.template_preset or "")
+        policy = self.mcp_policies.get(profile.mcp_policy or "")
+        # References, not resolved Secret values. Credential rotation does not
+        # invalidate approval; endpoint, image and execution-policy changes do.
+        return self._json_digest(
+            {
+                "profile": asdict(profile),
+                "backend": self.backends.get(profile.backend_id).fingerprint,
+                "preset": asdict(preset) if preset else None,
+                "mcp": asdict(policy) if policy else None,
+            }
+        )
+
     def _expire_plan(self, plan: TaskPlanRecord) -> None:
-        if plan.state in {"pending_approval", "approved", "ready"} and time.time() >= plan.expires_at:
+        if (
+            plan.state in {"pending_approval", "approved", "ready"}
+            and time.time() >= plan.expires_at
+        ):
             plan.state = "expired"
             self.state.put_task_plan(plan)
             raise AdapterError(409, "plan_expired", "task plan has expired")
@@ -1775,9 +2198,9 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
 
     @staticmethod
     def _json_digest(value: Any) -> str:
-        raw = json.dumps(
-            value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        ).encode("utf-8")
+        raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode(
+            "utf-8"
+        )
         return hashlib.sha256(raw).hexdigest()
 
     @staticmethod
@@ -1785,6 +2208,8 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
         return {
             "plan_ref": plan.plan_ref,
             "task_template": plan.template_name,
+            "backend_id": plan.backend_id,
+            "runtime_policy_sha256": plan.runtime_policy_sha256,
             "template_sha256": plan.template_digest,
             "parameters_sha256": plan.parameters_sha256,
             "command_sha256": plan.command_sha256,
@@ -1803,6 +2228,7 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
             "plan_ref": task.plan_ref,
             "task_template": task.template_name,
             "profile": task.profile,
+            "backend_id": task.backend_id,
             "state": task.state,
             "created_at": _timestamp(task.created_at),
             "updated_at": _timestamp(task.updated_at),
@@ -1926,9 +2352,7 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
                 if job_state == "succeeded":
                     sandbox = self._sandbox(record)
                     for output in template.outputs:
-                        value, evidence, error = self._read_task_output(
-                            sandbox, template, output
-                        )
+                        value, evidence, error = self._read_task_output(sandbox, template, output)
                         output_evidence.append(evidence)
                         if value is not None:
                             output_values[output.name] = value
@@ -1977,6 +2401,8 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
                 "task_template": task.template_name,
                 "template_sha256": task.template_digest,
                 "profile": task.profile,
+                "backend_id": task.backend_id,
+                "runtime_policy_sha256": plan.runtime_policy_sha256,
                 "parameters_sha256": plan.parameters_sha256,
                 "command_sha256": plan.command_sha256,
                 "sandbox_ref": sandbox_ref,
@@ -2007,9 +2433,11 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
             payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")
         ).encode("utf-8")
         key = self.config.effective_receipt_hmac_key.encode("utf-8")
-        signature = base64.urlsafe_b64encode(
-            hmac.new(key, encoded, hashlib.sha256).digest()
-        ).decode("ascii").rstrip("=")
+        signature = (
+            base64.urlsafe_b64encode(hmac.new(key, encoded, hashlib.sha256).digest())
+            .decode("ascii")
+            .rstrip("=")
+        )
         return {
             "payload": payload,
             "signature": {
@@ -2034,25 +2462,27 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
             "runtime": "mcp",
             "action": action,
             "profile": template.profile,
+            "backend_id": self.profiles[template.profile].backend_id,
             "task_template": template.name,
             "request_id": request_id,
             "outcome": outcome,
             **{key: value for key, value in extra.items() if value is not None},
         }
         self.audit.emit(event)
-        self.metrics.observe(
-            action, outcome, 0.0, runtime="mcp", profile=template.profile
-        )
+        self.metrics.observe(action, outcome, 0.0, runtime="mcp", profile=template.profile)
 
     def _destroy_owned_volume(self, record: LeaseRecord) -> None:
         if not record.volume_owned or not record.volume_id:
             return
-        profile = self.profiles[record.profile]
-        if profile.workspace.retain_on_kill:
+        profile = self.profiles.get(record.profile)
+        retain = record.volume_retain_on_kill
+        if retain is None:
+            retain = profile.workspace.retain_on_kill if profile else True
+        if retain:
             return
         try:
-            self._volume_destroyer(record.volume_id)
-        except Exception:
+            self._volume_destroyer(record.volume_id, **self._backend(record).kwargs())
+        except VolumeNotFoundError:
             pass
 
     def _lease(
@@ -2065,6 +2495,8 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
             raise AdapterError(404, "lease_not_found", "lease was not found or has expired")
         if record.tenant_id != auth.tenant_id and not auth.is_admin:
             raise AdapterError(404, "lease_not_found", "lease was not found or has expired")
+        if not auth.permits_profile(record.profile):
+            raise AdapterError(403, "profile_denied", "lease profile is not allowed")
         return record
 
     def _reuse_or_expire_lease(
@@ -2116,11 +2548,12 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
             return result
 
     def _sandbox(self, record: LeaseRecord) -> Any:
+        backend = self._backend(record)
         with self._handles_lock:
             sandbox = self._handles.get(record.lease_ref)
         if sandbox is not None:
             return sandbox
-        sandbox = self._sandbox_connector(record.sandbox_id)
+        sandbox = self._sandbox_connector(record.sandbox_id, **backend.kwargs())
         if record.traffic_access_token and hasattr(sandbox, "_data"):
             sandbox._data["trafficAccessToken"] = record.traffic_access_token
         with self._handles_lock:
@@ -2132,10 +2565,23 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
                 pass
         return raced
 
+    def _backend(self, record: LeaseRecord) -> BackendConfig:
+        try:
+            backend = self.backends.get(record.backend_id)
+        except RuntimeError as error:
+            raise AdapterError(
+                409, "backend_unavailable", "resource backend is no longer configured"
+            ) from error
+        if record.backend_fingerprint and record.backend_fingerprint != backend.fingerprint:
+            raise AdapterError(
+                409,
+                "backend_binding_changed",
+                "backend endpoints changed; live resources require operator migration",
+            )
+        return backend
+
     def _lease_lock(self, record: LeaseRecord, ttl: Optional[int] = None):
-        return self.state.lock(
-            f"lease:{record.lease_ref}", ttl or self.config.lock_ttl_seconds
-        )
+        return self.state.lock(f"lease:{record.lease_ref}", ttl or self.config.lock_ttl_seconds)
 
     def _touch(self, record: LeaseRecord, state: Optional[str] = None) -> None:
         record.last_used_at = time.time()
@@ -2165,24 +2611,32 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
     def _refresh_job_locked(self, job: JobRecord, record: LeaseRecord) -> None:
         if job.state not in {"running", "starting"}:
             return
-        sandbox = self._sandbox(record)
         try:
+            sandbox = self._sandbox(record)
             if sandbox.files.exists(job.exit_path):
                 raw = sandbox.files.read(job.exit_path).strip()
                 job.exit_code = int(raw)
                 job.state = "succeeded" if job.exit_code == 0 else "failed"
             else:
-                live = sandbox.commands.run(
-                    f"kill -0 {job.pid} 2>/dev/null", timeout=10
-                )
+                live = sandbox.commands.run(f"kill -0 {job.pid} 2>/dev/null", timeout=10)
                 if live.exit_code == 0:
+                    job.last_observation = "confirmed"
+                    self.state.put_job(job)
                     return
                 job.state = "failed"
+            job.last_observation = "confirmed"
             job.updated_at = time.time()
             self.state.put_job(job)
             self._refresh_gauges()
+        except SandboxNotFoundError:
+            job.state = "orphaned"
+            job.last_observation = "expired"
+            self.state.put_job(job)
+        except AdapterError:
+            raise
         except Exception:
-            return
+            job.last_observation = "unknown"
+            self.state.put_job(job)
 
     def _active_jobs_locked(self, record: LeaseRecord) -> list[JobRecord]:
         jobs = self.state.list_jobs(lease_ref=record.lease_ref)
@@ -2207,7 +2661,10 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
             "executor": "cubesandbox-microvm",
             "sandbox_ref": record.sandbox_ref,
             "job_ref": job.job_ref,
-            "state": job.state,
+            "backend_id": record.backend_id,
+            "state": "unknown" if job.last_observation == "unknown" else job.state,
+            "last_known_state": job.state,
+            "observation": job.last_observation,
             "exit_code": job.exit_code,
             "cancelled": job.cancelled,
             "created_at": _timestamp(job.created_at),
@@ -2249,9 +2706,7 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
     @staticmethod
     def _pty_dimension(value: Any, name: str) -> int:
         if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 1000:
-            raise AdapterError(
-                400, "invalid_pty_size", f"{name} must be an integer from 1 to 1000"
-            )
+            raise AdapterError(400, "invalid_pty_size", f"{name} must be an integer from 1 to 1000")
         return value
 
     @staticmethod
@@ -2270,9 +2725,7 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
         self, checkpoint_ref: str, record: LeaseRecord, auth: AuthContext
     ) -> CheckpointRecord:
         del auth
-        if not isinstance(checkpoint_ref, str) or not CHECKPOINT_REF_RE.fullmatch(
-            checkpoint_ref
-        ):
+        if not isinstance(checkpoint_ref, str) or not CHECKPOINT_REF_RE.fullmatch(checkpoint_ref):
             raise AdapterError(404, "checkpoint_not_found", "checkpoint was not found")
         checkpoint = self.state.get_checkpoint(checkpoint_ref)
         if checkpoint is None or checkpoint.lease_ref != record.lease_ref:
@@ -2311,6 +2764,8 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
         return {
             "executor": "cubesandbox-microvm",
             "lease_ref": record.lease_ref,
+            "backend_id": record.backend_id,
+            "template_version": record.template_version,
             "sandbox_ref": record.sandbox_ref,
             "profile": record.profile,
             "reused": reused,
@@ -2336,6 +2791,7 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
             "action": action,
             "profile": record.profile,
             "lease_ref": record.lease_ref,
+            "backend_id": record.backend_id,
             "sandbox_ref": record.sandbox_ref,
             "request_id": request_id,
             "outcome": outcome,
@@ -2354,17 +2810,42 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
     def _refresh_gauges(self) -> None:
         leases = self.state.list_leases()
         jobs = self.state.list_jobs()
-        self.metrics.active_leases.set(
-            len([item for item in leases if item.state != "released"])
-        )
+        self.metrics.active_leases.set(len([item for item in leases if item.state != "released"]))
         self.metrics.active_jobs.set(
             len([item for item in jobs if item.state in {"starting", "running"}])
         )
 
     def _gc_loop(self) -> None:
-        while not self._stop.wait(self.config.gc_interval_seconds):
+        last_gc = 0.0
+        while not self._stop.wait(
+            min(self.config.gc_interval_seconds, self.config.keepalive_interval_seconds)
+        ):
             try:
-                self._run_gc()
+                for record in self.state.list_leases():
+                    profile = self.profiles.get(record.profile)
+                    if not profile or not profile.keepalive_enabled or record.state != "running":
+                        continue
+                    if (
+                        time.time() - record.last_renewed_at
+                        < self.config.keepalive_interval_seconds
+                    ):
+                        continue
+                    if time.time() >= record.created_at + profile.max_keepalive_seconds:
+                        continue
+                    if any(
+                        job.state in {"running", "starting"}
+                        for job in self.state.list_jobs(lease_ref=record.lease_ref)
+                    ):
+                        self.lease_renew(
+                            record.lease_ref,
+                            {},
+                            AuthContext(
+                                record.tenant_id, "lease-maintainer", roles=frozenset({"admin"})
+                            ),
+                        )
+                if time.monotonic() - last_gc >= self.config.gc_interval_seconds:
+                    self._run_gc()
+                    last_gc = time.monotonic()
             except Exception:
                 continue
 
@@ -2385,7 +2866,9 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
                     if latest is None or now - latest.last_used_at < profile.lease_idle_ttl_seconds:
                         continue
                     if self.audit.journal is not None:
-                        self._audit(latest, 'gc_release_intent', uuid.uuid4().hex[:16], 'pending', started)
+                        self._audit(
+                            latest, "gc_release_intent", uuid.uuid4().hex[:16], "pending", started
+                        )
                     try:
                         self._sandbox(latest).kill()
                     except SandboxNotFoundError:
@@ -2409,6 +2892,10 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
                 self.state.put_lease(record)
                 failed += 1
                 self.metrics.gc_actions.labels("error").inc()
+                if not isinstance(error, AdapterError) or error.status >= 500:
+                    # The kill / volume deletion may have happened. Keep the
+                    # GC intent unresolved rather than reporting known cleanup.
+                    raise
         self._refresh_gauges()
         return {"collected": collected, "failed": failed}
 

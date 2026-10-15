@@ -64,6 +64,24 @@ spec:
         - protocol: TCP
           port: {{ .Values.networkPolicy.redisPort }}
     {{- end }}
+    {{- if .Values.audit.postgresql.enabled }}
+    - to:
+        {{- if .Values.networkPolicy.postgresqlNamespace }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.postgresqlNamespace }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.postgresqlPodSelector | nindent 14 }}
+        {{- else }}
+        - podSelector:
+            matchLabels:
+              {{- toYaml .Values.networkPolicy.postgresqlPodSelector | nindent 14 }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.networkPolicy.postgresqlPort }}
+    {{- end }}
     {{- with .Values.networkPolicy.extraEgress }}
     {{- toYaml . | nindent 4 }}
     {{- end }}

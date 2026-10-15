@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Production execution features
+
+- Route approved Profiles to independently configured CubeAPI/CubeProxy
+  backends; pin live leases and approved plans to their execution environment.
+- Add versioned internal-template presets, creation-time Secret-file injection,
+  OpenClaw primary/fallback model validation, and fixed bootstrap/preflight hooks.
+- Govern sandbox MCP through registered servers and closed argument schemas,
+  bounded inputs/results, a killable deadline-bound transport and redacted audit.
+- Add bounded lease renewal, restart inventory and independent byte cursors for
+  stdout/stderr without automatically restarting commands.
+- Add a Light approval/audit console, tenant-scoped durable history, search,
+  pagination and export. Read-only roles cannot inherit runtime access.
+- Add PostgreSQL multiwriter required-audit authority with fenced owners,
+  transactional delivery claims, offline SQLite import and hash-chain archives.
+  SQLite remains the compatible single-writer default. Database HA and backup
+  retention remain operator responsibilities; no production migration is automatic.
+- Upgrade the Python SDK to `cubesandbox==0.7.3`; expose six additional tools
+  through the native plugins and MCP façade. Existing tool names remain valid.
+
 ### Fixed
 
 - Revalidate the backend sandbox before reusing a session lease. If the sandbox
@@ -22,7 +41,7 @@
   clone, referenced-snapshot deletion and complete temporary-resource cleanup.
 - A 2026-09-23 repeat of the real mounted-volume snapshot suite with a redacted
   result and before/after resource-baseline verification.
-- Production network and multi-cluster guidance that documents the current
+- Production network and multi-cluster guidance that documents the v0.5.0
   one-Adapter/one-backend boundary and the required CubeAPI plus CubeProxy path.
 - sr1 kube-prometheus-stack discovery for CubeMaster, TemplateCenter, Cubelet
   and per-sandbox resource metrics, plus a verified four-target Grafana
@@ -31,8 +50,8 @@
 
 ### Changed
 
-- Reviewed CubeSandbox v0.7.1 backend compatibility while retaining the latest
-  published `cubesandbox==0.7.0` Python SDK pin.
+- Current source pins `cubesandbox==0.7.3`; the published v0.5.0 image keeps its
+  original `cubesandbox==0.7.0` SDK pin.
 - Reviewed the stable CubeSandbox v0.7.2 release, including source-only Python
   SDK changes, snapshot fixes, S3lvol work, OpenCode guidance and the Kubernetes
   `cubeNode.hostNetwork: true` default. The sr1 upgrade and narrow SDK canaries

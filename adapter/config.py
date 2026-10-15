@@ -43,6 +43,11 @@ PROFILE_FIELDS = frozenset(
         "workspace",
         "checkpoints_enabled",
         "allow_checkpoint_with_mounts",
+        "backend_id",
+        "template_preset",
+        "mcp_policy",
+        "keepalive_enabled",
+        "max_keepalive_seconds",
     }
 )
 
@@ -180,9 +185,7 @@ class ProfileConfig:
     max_active_leases_per_tenant: int = 8
     max_jobs_per_lease: int = 8
     allow_internet_access: bool = False
-    network: Dict[str, Any] = field(
-        default_factory=lambda: {"allow_public_traffic": False}
-    )
+    network: Dict[str, Any] = field(default_factory=lambda: {"allow_public_traffic": False})
     lifecycle: Dict[str, Any] = field(
         default_factory=lambda: {"on_timeout": "pause", "auto_resume": True}
     )
@@ -191,6 +194,11 @@ class ProfileConfig:
     workspace: WorkspaceConfig = field(default_factory=WorkspaceConfig)
     checkpoints_enabled: bool = False
     allow_checkpoint_with_mounts: bool = False
+    backend_id: str = "default"
+    template_preset: Optional[str] = None
+    mcp_policy: Optional[str] = None
+    keepalive_enabled: bool = False
+    max_keepalive_seconds: int = 3600
 
     @classmethod
     def from_mapping(
@@ -212,6 +220,8 @@ class ProfileConfig:
                 + ", ".join(sorted(str(item) for item in unknown))
             )
         template = str(merged.get("template") or default_template)
+        if not template and merged.get("template_preset"):
+            template = "preset-placeholder"
         if not template:
             raise RuntimeError(f"profile {name!r} requires a template")
 
@@ -225,9 +235,7 @@ class ProfileConfig:
         if on_timeout not in {"pause", "kill"}:
             raise RuntimeError(f"profile {name!r} lifecycle.on_timeout is invalid")
         if "auto_resume" in lifecycle:
-            _boolean(
-                f"profile {name}.lifecycle.auto_resume", lifecycle["auto_resume"]
-            )
+            _boolean(f"profile {name}.lifecycle.auto_resume", lifecycle["auto_resume"])
 
         network = merged.get("network") or {"allow_public_traffic": False}
         if not isinstance(network, Mapping):
@@ -240,10 +248,25 @@ class ProfileConfig:
         unsupported = set(allowed_runtimes) - {"openclaw", "dsh", "hermes", "mcp"}
         if unsupported:
             raise RuntimeError(f"profile {name!r} has unsupported runtimes: {sorted(unsupported)}")
+        for key in ("backend_id", "template_preset", "mcp_policy"):
+            candidate = merged.get(key, "default" if key == "backend_id" else None)
+            if candidate is not None and (
+                not isinstance(candidate, str) or not PROFILE_NAME_RE.fullmatch(candidate)
+            ):
+                raise RuntimeError(f"profile {name!r} has an invalid {key}")
 
         return cls(
             name=name,
             template=template,
+            backend_id=merged.get("backend_id", "default"),
+            template_preset=merged.get("template_preset"),
+            mcp_policy=merged.get("mcp_policy"),
+            keepalive_enabled=_boolean(
+                f"profile {name}.keepalive_enabled", merged.get("keepalive_enabled", False)
+            ),
+            max_keepalive_seconds=_positive_int(
+                f"profile {name}.max_keepalive_seconds", merged.get("max_keepalive_seconds", 3600)
+            ),
             sandbox_timeout_seconds=_positive_int(
                 f"profile {name}.sandbox_timeout_seconds",
                 merged.get("sandbox_timeout_seconds", 300),
@@ -327,7 +350,11 @@ def load_profiles(
     if not isinstance(file_defaults, Mapping):
         raise RuntimeError("profile defaults must be an object")
     defaults.update(dict(file_defaults))
-    invalid = [str(name) for name, value in profile_values.items() if value is not None and not isinstance(value, Mapping)]
+    invalid = [
+        str(name)
+        for name, value in profile_values.items()
+        if value is not None and not isinstance(value, Mapping)
+    ]
     if invalid:
         raise RuntimeError(f"profile definitions must be objects: {sorted(invalid)}")
     return {
@@ -361,10 +388,14 @@ class AuthContext:
     def permits_action(self, name: str) -> bool:
         if self.is_admin:
             return True
+        if "runtime" not in self.roles and self.roles.intersection({"auditor", "approver"}):
+            role_actions = {"audit:read", "lease:discover", "task:status"}
+            if "approver" in self.roles:
+                role_actions.add("task:approve")
+            if name not in role_actions:
+                return False
         return any(
-            rule == "*"
-            or rule == name
-            or (rule.endswith(":*") and name.startswith(rule[:-1]))
+            rule == "*" or rule == name or (rule.endswith(":*") and name.startswith(rule[:-1]))
             for rule in self.allowed_actions
         )
 
@@ -409,7 +440,7 @@ class AdapterConfig:
     sandbox_timeout_seconds: int = 300
     max_command_seconds: int = 120
     audit_ui: bool = False
-    audit_mode: str = 'required'
+    audit_mode: str = "required"
     profiles_file: Optional[str] = None
     task_templates_file: Optional[str] = None
     receipt_hmac_key: Optional[str] = field(default=None, repr=False)
@@ -433,6 +464,14 @@ class AdapterConfig:
     trust_client_cert_subject: bool = False
     readiness_cache_seconds: int = 5
     admin_enabled: bool = True
+    backends_file: Optional[str] = None
+    template_presets_file: Optional[str] = None
+    mcp_policies_file: Optional[str] = None
+    audit_database_url: Optional[str] = field(default=None, repr=False)
+    audit_database_schema: str = "cube_adapter_audit"
+    audit_require_sync_replica: bool = False
+    keepalive_interval_seconds: int = 30
+    replicas: int = 1
 
     @classmethod
     def from_env(cls) -> "AdapterConfig":
@@ -441,15 +480,13 @@ class AdapterConfig:
         oidc_jwks_url = os.environ.get("CUBE_ADAPTER_OIDC_JWKS_URL") or None
         oidc_issuer = os.environ.get("CUBE_ADAPTER_OIDC_ISSUER") or None
         oidc_audience = os.environ.get("CUBE_ADAPTER_OIDC_AUDIENCE") or None
-        trust_client_cert_subject = os.environ.get(
-            "CUBE_ADAPTER_TRUST_CLIENT_CERT_SUBJECT", "0"
-        ) == "1"
+        trust_client_cert_subject = (
+            os.environ.get("CUBE_ADAPTER_TRUST_CLIENT_CERT_SUBJECT", "0") == "1"
+        )
         if token and len(token) < 24:
             raise RuntimeError("CUBE_ADAPTER_TOKEN must contain at least 24 characters")
         if not token and not principals and not oidc_jwks_url and not trust_client_cert_subject:
-            raise RuntimeError(
-                "configure bearer, OIDC, or trusted mTLS authentication"
-            )
+            raise RuntimeError("configure bearer, OIDC, or trusted mTLS authentication")
         if oidc_jwks_url and (not oidc_issuer or not oidc_audience):
             raise RuntimeError("OIDC authentication requires issuer and audience")
         _validate_url(
@@ -462,13 +499,11 @@ class AdapterConfig:
         if len(session_hmac_key) < 32:
             raise RuntimeError("CUBE_ADAPTER_HMAC_KEY must contain at least 32 characters")
         template = os.environ.get("CUBE_TEMPLATE_ID", "")
-        if not template:
+        if not template and not os.environ.get("CUBE_ADAPTER_PROFILES_FILE"):
             raise RuntimeError("CUBE_TEMPLATE_ID is required")
         receipt_hmac_key = os.environ.get("CUBE_ADAPTER_RECEIPT_HMAC_KEY") or None
         if receipt_hmac_key is not None and len(receipt_hmac_key) < 32:
-            raise RuntimeError(
-                "CUBE_ADAPTER_RECEIPT_HMAC_KEY must contain at least 32 characters"
-            )
+            raise RuntimeError("CUBE_ADAPTER_RECEIPT_HMAC_KEY must contain at least 32 characters")
 
         encryption_key = os.environ.get("CUBE_ADAPTER_STATE_ENCRYPTION_KEY") or None
         state_url = os.environ.get("CUBE_ADAPTER_STATE_BACKEND_URL") or None
@@ -479,9 +514,7 @@ class AdapterConfig:
                 schemes=frozenset({"redis", "rediss"}),
             )
             if not encryption_key:
-                raise RuntimeError(
-                    "Redis state requires CUBE_ADAPTER_STATE_ENCRYPTION_KEY"
-                )
+                raise RuntimeError("Redis state requires CUBE_ADAPTER_STATE_ENCRYPTION_KEY")
             _decode_fernet_key(encryption_key)
 
         tls_cert = os.environ.get("CUBE_ADAPTER_TLS_CERT_FILE") or None
@@ -492,13 +525,11 @@ class AdapterConfig:
         if tls_client_ca and not tls_cert:
             raise RuntimeError("mTLS client CA requires a TLS certificate and key")
         if trust_client_cert_subject and not tls_client_ca:
-            raise RuntimeError(
-                "trusted mTLS subject authentication requires a verified client CA"
-            )
+            raise RuntimeError("trusted mTLS subject authentication requires a verified client CA")
 
-        audit_mode = os.environ.get('CUBE_ADAPTER_AUDIT_MODE', 'required')
-        if audit_mode not in {'required', 'best_effort'}:
-            raise RuntimeError('CUBE_ADAPTER_AUDIT_MODE must be required or best_effort')
+        audit_mode = os.environ.get("CUBE_ADAPTER_AUDIT_MODE", "required")
+        if audit_mode not in {"required", "best_effort"}:
+            raise RuntimeError("CUBE_ADAPTER_AUDIT_MODE must be required or best_effort")
         sinks = _string_tuple(
             os.environ.get("CUBE_ADAPTER_AUDIT_SINKS", "file"),
             field_name="CUBE_ADAPTER_AUDIT_SINKS",
@@ -522,9 +553,7 @@ class AdapterConfig:
             token_principals=principals,
             session_hmac_key=session_hmac_key,
             template=template,
-            audit_log=os.environ.get(
-                "CUBE_ADAPTER_AUDIT_LOG", "./cube-adapter-audit.jsonl"
-            ),
+            audit_log=os.environ.get("CUBE_ADAPTER_AUDIT_LOG", "./cube-adapter-audit.jsonl"),
             bind=os.environ.get("CUBE_ADAPTER_BIND", "127.0.0.1"),
             port=_positive_int("CUBE_ADAPTER_PORT", os.environ.get("CUBE_ADAPTER_PORT", 18080)),
             sandbox_timeout_seconds=_positive_int(
@@ -555,9 +584,7 @@ class AdapterConfig:
             oidc_jwks_url=oidc_jwks_url,
             oidc_issuer=oidc_issuer,
             oidc_audience=oidc_audience,
-            oidc_tenant_claim=os.environ.get(
-                "CUBE_ADAPTER_OIDC_TENANT_CLAIM", "tenant_id"
-            ),
+            oidc_tenant_claim=os.environ.get("CUBE_ADAPTER_OIDC_TENANT_CLAIM", "tenant_id"),
             oidc_roles_claim=os.environ.get("CUBE_ADAPTER_OIDC_ROLES_CLAIM", "roles"),
             tls_cert_file=tls_cert,
             tls_key_file=tls_key,
@@ -568,6 +595,24 @@ class AdapterConfig:
                 os.environ.get("CUBE_ADAPTER_READINESS_CACHE_SECONDS", 5),
             ),
             admin_enabled=os.environ.get("CUBE_ADAPTER_ADMIN_ENABLED", "1") == "1",
+            backends_file=os.environ.get("CUBE_ADAPTER_BACKENDS_FILE") or None,
+            template_presets_file=os.environ.get("CUBE_ADAPTER_TEMPLATE_PRESETS_FILE") or None,
+            mcp_policies_file=os.environ.get("CUBE_ADAPTER_MCP_POLICIES_FILE") or None,
+            audit_database_url=os.environ.get("CUBE_ADAPTER_AUDIT_DATABASE_URL") or None,
+            audit_database_schema=os.environ.get(
+                "CUBE_ADAPTER_AUDIT_DATABASE_SCHEMA", "cube_adapter_audit"
+            ),
+            audit_require_sync_replica=os.environ.get(
+                "CUBE_ADAPTER_AUDIT_REQUIRE_SYNC_REPLICA", "0"
+            )
+            == "1",
+            keepalive_interval_seconds=_positive_int(
+                "CUBE_ADAPTER_KEEPALIVE_INTERVAL",
+                os.environ.get("CUBE_ADAPTER_KEEPALIVE_INTERVAL", 30),
+            ),
+            replicas=_positive_int(
+                "CUBE_ADAPTER_REPLICAS", os.environ.get("CUBE_ADAPTER_REPLICAS", 1)
+            ),
         )
 
     def profiles(self) -> Dict[str, ProfileConfig]:
@@ -578,9 +623,7 @@ class AdapterConfig:
             max_command_seconds=self.max_command_seconds,
         )
 
-    def task_templates(
-        self, profiles: Mapping[str, ProfileConfig]
-    ) -> Dict[str, Any]:
+    def task_templates(self, profiles: Mapping[str, ProfileConfig]) -> Dict[str, Any]:
         from .task_config import load_task_templates
 
         return load_task_templates(self.task_templates_file, profiles=profiles)
@@ -627,14 +670,10 @@ def _load_token_principals(path: Optional[str]) -> tuple[TokenPrincipal, ...]:
                         _string_tuple(entry.get("roles", ["runtime"]), field_name="roles")
                     ),
                     allowed_profiles=frozenset(
-                        _string_tuple(
-                            entry.get("allowed_profiles"), field_name="allowed_profiles"
-                        )
+                        _string_tuple(entry.get("allowed_profiles"), field_name="allowed_profiles")
                     ),
                     allowed_runtimes=frozenset(
-                        _string_tuple(
-                            entry.get("allowed_runtimes"), field_name="allowed_runtimes"
-                        )
+                        _string_tuple(entry.get("allowed_runtimes"), field_name="allowed_runtimes")
                     ),
                     allowed_actions=frozenset(
                         _string_tuple(

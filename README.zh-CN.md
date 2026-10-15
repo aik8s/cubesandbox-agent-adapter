@@ -23,6 +23,9 @@ Adapter 是唯一持有 Cube 连接配置、完整 Sandbox ID 和流量令牌的
 > 策略和带审批可信任务的基础上新增故障闭锁强审计。上线前仍需完成部署侧加固，
 > 并在每个目标 CubeSandbox 环境重新验收。
 
+main 新增了尚未发布的[多集群路由、内部模板、受控 MCP、长任务恢复与 PostgreSQL 强审计](docs/production-features.zh-CN.md)，
+以及 Light 审计/审批控制台。使用这些能力需构建当前源码，不能直接使用旧 v0.5.0 发布镜像。
+
 ## 新用户从哪里开始
 
 部署顺序是：**准备 CubeSandbox → 部署 Adapter → 接入一个 Agent → 执行并释放沙箱**。
@@ -252,19 +255,19 @@ Agent 工具结果中的 sandbox_ref
 
 ## 项目包含什么
 
-- 使用固定版本 `cubesandbox==0.7.0` SDK 的带认证 Python Adapter；已在
-  CubeSandbox v0.7.1 完成完整 Adapter 验收；
+- 当前源码使用固定版本 `cubesandbox==0.7.3` SDK 的带认证 Python Adapter；
   [v0.7.3 测试和生产集群升级、快照/MCP 实测及 Light 截图](docs/cubesandbox-upstream.md)已补充，
-  但完整的 Adapter/客户端实集群验收尚未重跑；
+  随后完成[当前源码的 Adapter 验收与经授权的生产镜像升级](docs/production-features.zh-CN.md#实测与界面)；
+  新功能在各 Agent 客户端应用内的完整验收尚未重跑；
 - 默认拒绝公网的声明式 Profile，并提供持久卷与检查点能力门控；
-- OpenClaw、DSH、Hermes 共用 19 个执行、文件、异步 Job、检查点和可信任务工具，
+- OpenClaw、DSH、Hermes 当前源码共用 25 个工具（原有 19 个加 6 个新入口），
   并提供 Codex、Claude Code、OpenCode 可使用的 MCP 门面；
 - DSH Cordis Plugin，以及禁用常见宿主 Shell/FS 工具的 Profile Patch；
 - 通过官方 Plugin Doctor 校验的 Hermes Agent 原生 Tool Plugin；
 - Kubernetes、OpenClaw、DSH、Hermes Agent 和 OpenCode 一键安装脚本；
 - 本地开发用 Docker Compose；
 - Helm Chart、纯 Kubernetes Manifest、测试和镜像发布流水线；
-- Redis 加密恢复和分布式锁（多副本仅可在显式降级为 `best_effort` 审计时使用）；
+- Redis 加密恢复和分布式锁；未发布的 PostgreSQL 路径支持多副本 `required` 审计；
 - 分租户 Bearer、OIDC、TLS/mTLS；
 - Prometheus 指标、依赖感知 Readiness 和可插拔审计 Sink；
 - 基于官方 SDK 的 MCP stdio 门面；
@@ -279,8 +282,8 @@ CubeMaster、TemplateCenter、Cubelet 原生指标，sr1 的 kube-prometheus-sta
 [CubeSandbox 监控](docs/cubesandbox-monitoring.zh-CN.md)。
 
 办公网 Agent 调用一个或多个生产 CubeSandbox 集群时，请阅读
-[生产网络与多集群边界](docs/multi-cluster-production.zh-CN.md)。当前一个 Adapter
-进程只绑定一个后端，推荐每个生产集群部署一套隔离的 Adapter；网络上必须同时允许
+[生产网络与多集群边界](docs/multi-cluster-production.zh-CN.md)。v0.5.0 发布包一个 Adapter
+进程只绑定一个后端；当前源码可按服务端 Profile 路由多个后端，详见[新能力指南](docs/production-features.zh-CN.md)。网络上必须同时允许
 CubeAPI 与 CubeProxy，只有 CubeAPI 时可能创建成功但无法返回命令、文件、PTY 或
 Job 结果。
 
@@ -440,7 +443,7 @@ Plugin Doctor。安装后启动一个新的受限会话：
 hermes -t cube-adapter
 ```
 
-插件注册全部 19 个通用执行和可信任务工具。启用 Hermes
+当前源码插件注册 25 个工具，v0.5.0 发布包为 19 个。启用 Hermes
 工具压缩时，这些工具可能不会直接塞进模型 Prompt，而是先出现在内置的
 `tool_describe` / `tool_call` 延迟目录中；这是正常行为，本仓库的真实联调已经覆盖
 了这条路径。
@@ -650,7 +653,7 @@ MCP 或自定义客户端。
 同命名空间 Redis 会自动生成出站规则；跨命名空间时配置 `redisNamespace`，并可追加
 `redisPodSelector`。
 
-`cubesandbox==0.7.0` 不读取 `CUBE_PROXY_SCHEME`。从其他 SDK 复制连接参数前，
+`cubesandbox==0.7.3` 不读取 `CUBE_PROXY_SCHEME`。从其他 SDK 复制连接参数前，
 请先核对当前 SDK 版本。
 
 ## 测试与验收

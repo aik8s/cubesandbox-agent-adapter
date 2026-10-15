@@ -1,0 +1,9 @@
+{
+  "result": "PASS",
+  "real_ui": true,
+  "color_scheme": "light",
+  "independent_approval": true,
+  "exported_events": 11,
+  "token_browser_storage": false,
+  "csp": "inline script SHA256 + same-origin data requests"
+}

@@ -4,7 +4,10 @@ This guide defines the current boundary when OpenClaw or another Agent runs in
 an office Kubernetes cluster while CubeSandbox runs in one or more production
 networks.
 
-## Current support
+Unreleased main capabilities are documented in [the new guide](production-features.md).
+The following describes the v0.5.0 published packages, not current source.
+
+## v0.5.0 published support
 
 | Scenario | Status |
 | --- | --- |

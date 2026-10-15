@@ -71,6 +71,18 @@ taskTemplates:
   key: task-templates.yaml
   data: {}
 
+backends:
+  existingConfigMap: ""
+  key: backends.yaml
+templatePresets:
+  existingConfigMap: ""
+  key: templates.yaml
+mcpPolicies:
+  existingConfigMap: ""
+  key: mcp-policies.yaml
+# Read-only Secret mounts used by ${FILE:/absolute/path} catalog references.
+configurationSecrets: []
+
 state:
   enabled: false
   redisUrl: ""
@@ -89,6 +101,12 @@ audit:
   httpUrl: ""
   httpTokenSecret: ""
   httpTokenKey: token
+  postgresql:
+    enabled: false
+    existingSecret: ""
+    urlKey: postgresql-url
+    schema: cube_adapter_audit
+    requireSyncReplica: false
   persistence:
     enabled: true
     # Preserve authoritative audit data when the Helm release is uninstalled.
@@ -104,6 +122,7 @@ adapter:
   auditUi: false
   adminEnabled: true
   readinessCacheSeconds: 5
+  keepaliveIntervalSeconds: 30
 
 service:
   type: ClusterIP
@@ -127,6 +146,9 @@ networkPolicy:
   redisNamespace: ""
   redisPodSelector: {}
   redisPort: 6379
+  postgresqlNamespace: ""
+  postgresqlPodSelector: {}
+  postgresqlPort: 5432
   extraIngress: []
   extraEgress: []
 

@@ -22,9 +22,7 @@ __all__ = [
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Authenticated CubeSandbox Agent adapter"
-    )
+    parser = argparse.ArgumentParser(description="Authenticated CubeSandbox Agent adapter")
     parser.add_argument("--version", action="version", version=VERSION)
     parser.parse_args()
     config = AdapterConfig.from_env()

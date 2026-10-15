@@ -30,8 +30,14 @@ class LeaseRecord:
     traffic_access_token: Optional[str] = field(default=None, repr=False)
     volume_id: Optional[str] = None
     volume_owned: bool = False
+    volume_retain_on_kill: Optional[bool] = None
     version: int = 1
     last_error: Optional[str] = None
+    backend_id: str = "default"
+    backend_fingerprint: str = ""
+    template_version: Optional[str] = None
+    mcp_gateway_token: Optional[str] = field(default=None, repr=False)
+    last_renewed_at: float = 0.0
 
     @classmethod
     def from_dict(cls, value: Dict[str, Any]) -> "LeaseRecord":
@@ -56,6 +62,8 @@ class JobRecord:
     state: str = "running"
     exit_code: Optional[int] = None
     cancelled: bool = False
+    backend_id: str = "default"
+    last_observation: str = "confirmed"
 
     @classmethod
     def from_dict(cls, value: Dict[str, Any]) -> "JobRecord":
@@ -72,6 +80,7 @@ class CheckpointRecord:
     tenant_id: str
     snapshot_id: str
     name: Optional[str]
+    backend_id: str = "default"
     created_at: float = field(default_factory=time.time)
 
     @classmethod
@@ -100,6 +109,8 @@ class TaskPlanRecord:
     approved_by_hash: Optional[str] = None
     submitted_task_ref: Optional[str] = None
     denial_reason_sha256: Optional[str] = None
+    backend_id: str = "default"
+    runtime_policy_sha256: str = ""
 
     @classmethod
     def from_dict(cls, value: Dict[str, Any]) -> "TaskPlanRecord":
@@ -127,6 +138,7 @@ class TaskRecord:
     receipt: Optional[Dict[str, Any]] = None
     last_error: Optional[str] = None
     cleanup_status: str = "not_started"
+    backend_id: str = "default"
 
     @classmethod
     def from_dict(cls, value: Dict[str, Any]) -> "TaskRecord":
@@ -176,9 +188,13 @@ class StateStore(Protocol):
 
     def get_task_plan(self, plan_ref: str) -> Optional[TaskPlanRecord]: ...
 
+    def list_task_plans(self, tenant_id: Optional[str] = None) -> list[TaskPlanRecord]: ...
+
     def put_task(self, record: TaskRecord) -> None: ...
 
     def get_task(self, task_ref: str) -> Optional[TaskRecord]: ...
+
+    def list_tasks(self, tenant_id: Optional[str] = None) -> list[TaskRecord]: ...
 
     def close(self) -> None: ...
 
@@ -224,9 +240,7 @@ class MemoryStateStore:
                 old.runtime,
                 old.session_hash,
             ) != (record.tenant_id, record.runtime, record.session_hash):
-                self._sessions.pop(
-                    (old.tenant_id, old.runtime, old.session_hash), None
-                )
+                self._sessions.pop((old.tenant_id, old.runtime, old.session_hash), None)
             self._leases[record.lease_ref] = copy.deepcopy(record)
             self._sessions[(record.tenant_id, record.runtime, record.session_hash)] = (
                 record.lease_ref
@@ -235,9 +249,7 @@ class MemoryStateStore:
     def delete_lease(self, record: LeaseRecord) -> None:
         with self._global_lock:
             self._leases.pop(record.lease_ref, None)
-            self._sessions.pop(
-                (record.tenant_id, record.runtime, record.session_hash), None
-            )
+            self._sessions.pop((record.tenant_id, record.runtime, record.session_hash), None)
             for job in list(self._jobs.values()):
                 if job.lease_ref == record.lease_ref:
                     self._jobs.pop(job.job_ref, None)
@@ -306,6 +318,14 @@ class MemoryStateStore:
             value = self._task_plans.get(plan_ref)
             return copy.deepcopy(value) if value else None
 
+    def list_task_plans(self, tenant_id: Optional[str] = None) -> list[TaskPlanRecord]:
+        with self._global_lock:
+            return [
+                copy.deepcopy(item)
+                for item in self._task_plans.values()
+                if tenant_id is None or item.tenant_id == tenant_id
+            ]
+
     def put_task(self, record: TaskRecord) -> None:
         with self._global_lock:
             self._tasks[record.task_ref] = copy.deepcopy(record)
@@ -314,6 +334,14 @@ class MemoryStateStore:
         with self._global_lock:
             value = self._tasks.get(task_ref)
             return copy.deepcopy(value) if value else None
+
+    def list_tasks(self, tenant_id: Optional[str] = None) -> list[TaskRecord]:
+        with self._global_lock:
+            return [
+                copy.deepcopy(item)
+                for item in self._tasks.values()
+                if tenant_id is None or item.tenant_id == tenant_id
+            ]
 
     def close(self) -> None:
         return
@@ -326,9 +354,7 @@ class RecordCipher:
         self._fernet = Fernet(key.encode("ascii"))
 
     def dumps(self, value: Dict[str, Any]) -> bytes:
-        raw = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode(
-            "utf-8"
-        )
+        raw = json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         return self._fernet.encrypt(raw)
 
     def loads(self, value: bytes) -> Dict[str, Any]:
@@ -399,9 +425,7 @@ return 0
             interval = max(0.5, ttl_seconds / 3)
             while not stop.wait(interval):
                 try:
-                    result = self._redis.eval(
-                        self._EXTEND_LOCK_SCRIPT, 1, lock_key, token, ttl_ms
-                    )
+                    result = self._redis.eval(self._EXTEND_LOCK_SCRIPT, 1, lock_key, token, ttl_ms)
                     if not result:
                         return
                 except Exception:
@@ -437,9 +461,7 @@ return 0
 
     def put_lease(self, record: LeaseRecord) -> None:
         lease_key = self._key("lease", record.lease_ref)
-        session_key = self._key(
-            "session", record.tenant_id, record.runtime, record.session_hash
-        )
+        session_key = self._key("session", record.tenant_id, record.runtime, record.session_hash)
         tenant_key = self._key("tenant-leases", record.tenant_id)
         pipe = self._redis.pipeline(transaction=True)
         pipe.set(lease_key, self._cipher.dumps(record.to_dict()))
@@ -453,9 +475,7 @@ return 0
         checkpoints = self.list_checkpoints(record.lease_ref)
         pipe = self._redis.pipeline(transaction=True)
         pipe.delete(self._key("lease", record.lease_ref))
-        pipe.delete(
-            self._key("session", record.tenant_id, record.runtime, record.session_hash)
-        )
+        pipe.delete(self._key("session", record.tenant_id, record.runtime, record.session_hash))
         pipe.srem(self._key("leases"), record.lease_ref.encode("utf-8"))
         pipe.srem(
             self._key("tenant-leases", record.tenant_id),
@@ -478,9 +498,7 @@ return 0
 
     def list_leases(self, tenant_id: Optional[str] = None) -> list[LeaseRecord]:
         key = (
-            self._key("tenant-leases", tenant_id)
-            if tenant_id is not None
-            else self._key("leases")
+            self._key("tenant-leases", tenant_id) if tenant_id is not None else self._key("leases")
         )
         records = [self.get_lease(item) for item in self._members(key)]
         return [item for item in records if item is not None]
@@ -489,9 +507,7 @@ return 0
         pipe = self._redis.pipeline(transaction=True)
         pipe.set(self._key("job", record.job_ref), self._cipher.dumps(record.to_dict()))
         pipe.sadd(self._key("jobs"), record.job_ref.encode("utf-8"))
-        pipe.sadd(
-            self._key("lease-jobs", record.lease_ref), record.job_ref.encode("utf-8")
-        )
+        pipe.sadd(self._key("lease-jobs", record.lease_ref), record.job_ref.encode("utf-8"))
         pipe.execute()
 
     def get_job(self, job_ref: str) -> Optional[JobRecord]:
@@ -501,9 +517,7 @@ return 0
         pipe = self._redis.pipeline(transaction=True)
         pipe.delete(self._key("job", record.job_ref))
         pipe.srem(self._key("jobs"), record.job_ref.encode("utf-8"))
-        pipe.srem(
-            self._key("lease-jobs", record.lease_ref), record.job_ref.encode("utf-8")
-        )
+        pipe.srem(self._key("lease-jobs", record.lease_ref), record.job_ref.encode("utf-8"))
         pipe.execute()
 
     def list_jobs(
@@ -529,9 +543,7 @@ return 0
         pipe.execute()
 
     def get_checkpoint(self, checkpoint_ref: str) -> Optional[CheckpointRecord]:
-        return self._load(
-            self._key("checkpoint", checkpoint_ref), CheckpointRecord
-        )
+        return self._load(self._key("checkpoint", checkpoint_ref), CheckpointRecord)
 
     def delete_checkpoint(self, record: CheckpointRecord) -> None:
         pipe = self._redis.pipeline(transaction=True)
@@ -550,16 +562,41 @@ return 0
         return [item for item in records if item is not None]
 
     def put_task_plan(self, record: TaskPlanRecord) -> None:
-        self._save(self._key("task-plan", record.plan_ref), record)
+        pipe = self._redis.pipeline(transaction=True)
+        pipe.set(self._key("task-plan", record.plan_ref), self._cipher.dumps(record.to_dict()))
+        pipe.sadd(self._key("task-plans"), record.plan_ref)
+        pipe.execute()
 
     def get_task_plan(self, plan_ref: str) -> Optional[TaskPlanRecord]:
         return self._load(self._key("task-plan", plan_ref), TaskPlanRecord)
 
+    def list_task_plans(self, tenant_id: Optional[str] = None) -> list[TaskPlanRecord]:
+        # Scoped prefix scan also includes plans created before the index existed.
+        records = [
+            self._load(key, TaskPlanRecord)
+            for key in self._redis.scan_iter(match=self._key("task-plan", "*"), count=100)
+        ]
+        return [
+            item for item in records if item and (tenant_id is None or item.tenant_id == tenant_id)
+        ]
+
     def put_task(self, record: TaskRecord) -> None:
-        self._save(self._key("task", record.task_ref), record)
+        pipe = self._redis.pipeline(transaction=True)
+        pipe.set(self._key("task", record.task_ref), self._cipher.dumps(record.to_dict()))
+        pipe.sadd(self._key("tasks"), record.task_ref)
+        pipe.execute()
 
     def get_task(self, task_ref: str) -> Optional[TaskRecord]:
         return self._load(self._key("task", task_ref), TaskRecord)
+
+    def list_tasks(self, tenant_id: Optional[str] = None) -> list[TaskRecord]:
+        records = [
+            self._load(key, TaskRecord)
+            for key in self._redis.scan_iter(match=self._key("task", "*"), count=100)
+        ]
+        return [
+            item for item in records if item and (tenant_id is None or item.tenant_id == tenant_id)
+        ]
 
     def close(self) -> None:
         try:
