@@ -121,7 +121,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - run: docker build -t cubesandbox-agent-adapter:ci adapter
-      - uses: anchore/sbom-action@v0.24.0
+      - uses: anchore/sbom-action@v0.24.2
         with:
           image: cubesandbox-agent-adapter:ci
           format: spdx-json
