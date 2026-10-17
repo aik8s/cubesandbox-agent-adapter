@@ -138,7 +138,13 @@ class AuditManager:
         if self.journal is not None:
             from .audited import _parent
 
-            self.journal.append({**event, "operation_id": _parent.get()})
+            clear_lease = (
+                event.get("lease_ref")
+                if event.get("action") in {"gc_release", "lease_expired"}
+                and event.get("outcome") == "ok"
+                else None
+            )
+            self.journal.append({**event, "operation_id": _parent.get()}, clear_lease=clear_lease)
             return
         snapshot = dict(event)
         with self._recent_lock:
@@ -165,6 +171,12 @@ class AuditManager:
                 pending, incomplete = -1, -1
         self._metrics.audit_pending.set(pending)
         self._metrics.audit_incomplete.set(incomplete)
+        try:
+            self._metrics.audit_quarantined.set(
+                len(self.journal.quarantine_operations()) if self.journal else 0
+            )
+        except Exception:
+            self._metrics.audit_quarantined.set(-1)
 
     def load_recent(self, path: str) -> None:
         try:

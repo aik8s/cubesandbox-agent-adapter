@@ -71,6 +71,12 @@ class AuditJournal:
                 );
                 CREATE INDEX IF NOT EXISTS pending_by_sink ON deliveries(sink, seq);
                 CREATE INDEX IF NOT EXISTS incomplete_operations ON operations(completed);
+                CREATE TABLE IF NOT EXISTS lease_quarantines (
+                    operation_id TEXT PRIMARY KEY REFERENCES operations(operation_id),
+                    lease_ref TEXT NOT NULL,
+                    resolved INTEGER NOT NULL DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS quarantine_by_lease ON lease_quarantines(lease_ref,resolved);
             """)
             if self.db.execute("PRAGMA quick_check").fetchone()[0] != "ok":
                 raise AuditUnavailable("audit journal integrity check failed")
@@ -117,7 +123,13 @@ class AuditJournal:
         return value
 
     def append(
-        self, event: dict[str, Any], *, begin: str | None = None, finish: str | None = None
+        self,
+        event: dict[str, Any],
+        *,
+        begin: str | None = None,
+        finish: str | None = None,
+        quarantine_lease: str | None = None,
+        clear_lease: str | None = None,
     ) -> dict[str, Any]:
         with self._lock:
             self.ensure_ready()
@@ -136,10 +148,45 @@ class AuditJournal:
                         )
                         if cursor.rowcount != 1:
                             raise AuditUnavailable("operation intent missing or already completed")
+                    if quarantine_lease:
+                        if not finish:
+                            raise AuditUnavailable("quarantine requires a committed result")
+                        self.db.execute(
+                            "INSERT INTO lease_quarantines(operation_id,lease_ref) VALUES (?,?)",
+                            (finish, quarantine_lease),
+                        )
+                    if clear_lease:
+                        self.db.execute(
+                            "UPDATE lease_quarantines SET resolved=1 WHERE lease_ref=?",
+                            (clear_lease,),
+                        )
                 return value
             except Exception as error:
                 self.failed = True
                 raise AuditUnavailable("audit commit failed; execution is blocked") from error
+
+    def lease_quarantined(self, lease_ref: str) -> bool:
+        try:
+            with self._lock:
+                return (
+                    self.db.execute(
+                        "SELECT 1 FROM lease_quarantines WHERE lease_ref=? AND resolved=0 LIMIT 1",
+                        (lease_ref,),
+                    ).fetchone()
+                    is not None
+                )
+        except Exception as error:
+            self.failed = True
+            raise AuditUnavailable("lease quarantine authority unavailable") from error
+
+    def quarantine_operations(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [
+                {**json.loads(row[0]), "quarantined": True}
+                for row in self.db.execute(
+                    "SELECT o.intent FROM lease_quarantines q JOIN operations o USING(operation_id) WHERE q.resolved=0 ORDER BY o.rowid"
+                )
+            ]
 
     def pending_operations(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -221,7 +268,11 @@ class AuditJournal:
                 "UPDATE operations SET completed=1 WHERE operation_id=? AND completed=0",
                 (operation_id,),
             )
-            if cursor.rowcount != 1:
+            quarantine = self.db.execute(
+                "UPDATE lease_quarantines SET resolved=1 WHERE operation_id=? AND resolved=0",
+                (operation_id,),
+            )
+            if cursor.rowcount != 1 and quarantine.rowcount != 1:
                 raise ValueError("unknown or already reconciled operation")
             self._insert(
                 {

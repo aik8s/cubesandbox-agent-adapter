@@ -152,11 +152,18 @@ paths:
   /v1/leases/{lease_ref}/exec:
     post:
       operationId: executeCommand
+      description: >-
+        Run a short synchronous command. A timeout/unknown outcome is audited and
+        quarantines only this lease; do not retry. Use asynchronous jobs for long
+        commands. Inspect status or release with action=kill to clean up.
       parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
       requestBody: { $ref: "#/components/requestBodies/Exec" }
       responses:
         "200": { $ref: "#/components/responses/JsonSuccess" }
         "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Error" }
+        "502": { $ref: "#/components/responses/Error" }
+        "503": { $ref: "#/components/responses/Error" }
         "504": { $ref: "#/components/responses/Error" }
   /v1/leases/{lease_ref}/read:
     post:

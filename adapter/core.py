@@ -13,6 +13,7 @@ import socket
 import threading
 import time
 import uuid
+from contextlib import nullcontext
 from dataclasses import asdict, dataclass, replace
 from pathlib import PurePosixPath
 from typing import Any, Callable, Dict, Iterator, Optional, Tuple
@@ -28,7 +29,8 @@ from cubesandbox import (
 )
 
 from .audit import AuditManager
-from .audited import audited_adapter
+from .audit_journal import AuditUnavailable
+from .audited import LEASE_RECOVERY_ACTIONS, _action, _exec_lock, audited_adapter
 from .auth import Authenticator, AuthFailure
 from .backend_config import BackendConfig, BackendRegistry
 from .config import AdapterConfig, AuthContext, ProfileConfig
@@ -69,6 +71,18 @@ class AdapterError(Exception):
         self.status = status
         self.code = code
         self.message = message
+
+
+class ExecutionUncertain(AdapterError):
+    """An execution result was durably recorded as unknown, not successful."""
+
+    def __init__(self, lease_ref: str, *, timed_out: bool = False) -> None:
+        self.lease_ref = lease_ref
+        super().__init__(
+            504 if timed_out else 502,
+            "execution_timeout" if timed_out else "execution_outcome_unknown",
+            "execution outcome is unknown; lease quarantined; do not retry; inspect status or release with action=kill; use asynchronous jobs for long commands",
+        )
 
 
 @dataclass
@@ -457,6 +471,9 @@ class CubeAdapter:
             "recoverable": self.state.durable,
             "backend_id": record.backend_id,
             "template_version": record.template_version,
+            "quarantined": bool(
+                self.audit.journal and self.audit.journal.lease_quarantined(lease_ref)
+            ),
         }
 
     def list_leases(self, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
@@ -492,6 +509,16 @@ class CubeAdapter:
         action = body.get("action", "pause")
         if action not in {"pause", "kill"}:
             raise AdapterError(400, "invalid_action", "action must be pause or kill")
+        if (
+            action != "kill"
+            and self.audit.journal
+            and self.audit.journal.lease_quarantined(lease_ref)
+        ):
+            raise AdapterError(
+                409,
+                "lease_quarantined",
+                "uncertain execution requires inspection or kill, not pause",
+            )
         request_id = _request_id(body.get("request_id"))
         started = time.perf_counter()
         with self._lease_lock(record):
@@ -569,7 +596,11 @@ class CubeAdapter:
         request_id = _request_id(body.get("request_id"))
         started = time.perf_counter()
         try:
-            with self._lease_lock(record, profile.max_command_seconds + 60):
+            with (
+                nullcontext()
+                if _exec_lock.get() == (id(self), record.lease_ref)
+                else self._lease_lock(record, profile.max_command_seconds + 60)
+            ):
                 try:
                     sandbox = self._sandbox(record)
                     sandbox.get_info()
@@ -612,7 +643,15 @@ class CubeAdapter:
                 command_sha256=_digest(command, 16),
                 error_type=type(error).__name__,
             )
-            raise
+            if isinstance(error, (AdapterError, AuditUnavailable)):
+                raise
+            timed_out = isinstance(error, TimeoutError) or (
+                "timed out" in str(error).lower()
+                or "timeout" in type(error).__name__.lower()
+                or "deadline_exceeded" in str(error).lower()
+                or "deadline exceeded" in str(error).lower()
+            )
+            raise ExecutionUncertain(record.lease_ref, timed_out=timed_out) from error
 
     # Safe filesystem and artifacts ---------------------------------
 
@@ -2497,6 +2536,16 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
             raise AdapterError(404, "lease_not_found", "lease was not found or has expired")
         if not auth.permits_profile(record.profile):
             raise AdapterError(403, "profile_denied", "lease profile is not allowed")
+        if (
+            self.audit.journal is not None
+            and _action.get() not in LEASE_RECOVERY_ACTIONS
+            and self.audit.journal.lease_quarantined(record.lease_ref)
+        ):
+            raise AdapterError(
+                409,
+                "lease_quarantined",
+                "previous execution outcome is unknown; inspect status or release with action=kill; do not retry",
+            )
         return record
 
     def _reuse_or_expire_lease(
@@ -2548,6 +2597,16 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
             return result
 
     def _sandbox(self, record: LeaseRecord) -> Any:
+        if (
+            self.audit.journal is not None
+            and _action.get() not in LEASE_RECOVERY_ACTIONS | {"acquire", "_run_gc", "force_gc"}
+            and self.audit.journal.lease_quarantined(record.lease_ref)
+        ):
+            raise AdapterError(
+                409,
+                "lease_quarantined",
+                "previous execution outcome is unknown; inspect status or kill the lease",
+            )
         backend = self._backend(record)
         with self._handles_lock:
             sandbox = self._handles.get(record.lease_ref)

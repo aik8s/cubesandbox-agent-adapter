@@ -17,6 +17,43 @@ operator reconciliation, never automatic replay of workloads.
 
 ## Authority and delivery
 
+### Execution fault isolation (unreleased fix)
+
+A synchronous execution timeout returns `504 execution_timeout`; other unknown
+execution outcomes return `502 execution_outcome_unknown`. When that result can
+be committed durably, its audit envelope is complete **as an unknown outcome**,
+not as a successful command. The same transaction persists a lease quarantine.
+The Adapter remains Ready and other leases continue working. Retrying commands
+or mutating the quarantined lease returns `409 lease_quarantined`.
+
+Status, file/result inspection and job cancellation remain available; `release`
+with `action=kill` destroys the sandbox and clears containment atomically with its
+audit completion. Pause is not a resolution. The original uncertain event is
+never rewritten or deleted. Quarantines survive restart and are shared between
+PostgreSQL writers. In-memory lease state itself still does not survive restart.
+Use `cube_job_start` for long commands such as `sleep 300`, then inspect/cancel
+the job; never blindly replay a timed-out synchronous command.
+
+Audit storage/commit failure, incomplete crash intents and other unclassified
+external failures still block guarded calls globally. Lease containment does not
+downgrade required audit. Both execution result and quarantine must commit before
+any subsequent mutation of that lease; concurrent retries cannot bypass it.
+
+Monitor `cube_adapter_audit_quarantined_operations` separately from
+`cube_adapter_audit_incomplete_operations` and `cube_adapter_audit_blocked`.
+Offline inspection is available with:
+
+```sh
+python -m adapter.audit_admin --database /var/log/cube-adapter/audit.jsonl.sqlite3 quarantines
+```
+
+After independently checking the backend, an operator can use the existing
+`reconcile --operation-id ... --note ...` command to acknowledge a quarantine.
+This records manual reconciliation without claiming execution success. Resolve
+quarantines before SQLite-to-PostgreSQL migration. Back up the volume before
+upgrading: the old SQLite schema is extended additively. An old image does not
+enforce lease containment, so do not roll back while quarantines remain active.
+
 The authority is `${CUBE_ADAPTER_AUDIT_LOG}.sqlite3`, not the JSONL export.
 SQLite uses DELETE journaling, EXTRA synchronous commits and fullfsync. Events,
 pending deliveries and operation completion share a transaction. A process-level

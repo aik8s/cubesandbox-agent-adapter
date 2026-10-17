@@ -9,6 +9,7 @@ import inspect
 import json
 import re
 import uuid
+from contextlib import ExitStack
 from contextvars import ContextVar
 from typing import Any, Callable
 
@@ -26,6 +27,11 @@ task_submit task_status task_result task_cancel task_receipt force_gc _run_gc
 discover mcp_list mcp_call lease_renew job_resume recover task_plans audit_query""".split()
 )
 _parent: ContextVar[str | None] = ContextVar("audit_operation", default=None)
+_action: ContextVar[str | None] = ContextVar("audit_action", default=None)
+_exec_lock: ContextVar[tuple[int, str] | None] = ContextVar("audit_exec_lock", default=None)
+LEASE_RECOVERY_ACTIONS = frozenset(
+    "lease_status release read list_files stat_file artifact_download job_status job_output job_cancel pty_status pty_kill iter_job_events iter_pty_events checkpoint_list".split()
+)
 
 
 def audited_adapter(cls: Any) -> Any:
@@ -62,6 +68,7 @@ def _wrap_stream(method: Callable[..., Any]) -> Callable[..., Any]:
             value = bound.get(key)
             if isinstance(value, str) and re.fullmatch(r"[a-z-]+_[a-f0-9]{20}", value):
                 event[key] = value
+        action_token = _action.set(method.__name__)
         try:
             journal.append({**event, "phase": "intent", "outcome": "pending"}, begin=operation_id)
             try:
@@ -80,6 +87,8 @@ def _wrap_stream(method: Callable[..., Any]) -> Callable[..., Any]:
                 journal.append({**event, "phase": "result", "outcome": "ok"}, finish=operation_id)
         except AuditUnavailable as error:
             raise AdapterError(503, "audit_unavailable", "durable audit unavailable") from error
+        finally:
+            _action.reset(action_token)
 
     return stream
 
@@ -93,7 +102,7 @@ def _wrap(method: Callable[..., Any]) -> Callable[..., Any]:
         if journal is None:
             return method(self, *args, **kwargs)
         # Import at invocation time to avoid a circular dependency.
-        from .core import AdapterError
+        from .core import AdapterError, ExecutionUncertain, _default_auth
 
         bound = signature.bind(self, *args, **kwargs).arguments
         auth = bound.get("auth")
@@ -122,15 +131,27 @@ def _wrap(method: Callable[..., Any]) -> Callable[..., Any]:
             if isinstance(value, str) and re.fullmatch(r"[a-z-]+_[a-f0-9]{20}", value):
                 event[key] = value
         token = _parent.set(operation_id)
+        action_token = _action.set(method.__name__)
+        execution_token = None
+        locks = ExitStack()
         try:
             journal.append(event, begin=operation_id)
             try:
+                if method.__name__ == "exec":
+                    record = self._lease(bound["lease_ref"], auth or _default_auth())
+                    locks.enter_context(
+                        self._lease_lock(
+                            record, self.profiles[record.profile].max_command_seconds + 60
+                        )
+                    )
+                    execution_token = _exec_lock.set((id(self), record.lease_ref))
                 result = method(self, *args, **kwargs)
             except AuditUnavailable:
                 raise
             except Exception as error:
                 # An unexpected failure may follow an external side effect.
                 known_rejection = isinstance(error, AdapterError) and error.status < 500
+                scoped = isinstance(error, ExecutionUncertain)
                 journal.append(
                     {
                         **event,
@@ -141,9 +162,12 @@ def _wrap(method: Callable[..., Any]) -> Callable[..., Any]:
                         if isinstance(error, AdapterError)
                         else "upstream_error",
                     },
-                    finish=operation_id if known_rejection else None,
+                    finish=operation_id if known_rejection or scoped else None,
+                    quarantine_lease=error.lease_ref
+                    if isinstance(error, ExecutionUncertain)
+                    else None,
                 )
-                if not known_rejection:
+                if not known_rejection and not scoped:
                     journal.failed = True
                 raise
             completion = {**event, "phase": "result", "outcome": "ok"}
@@ -164,7 +188,14 @@ def _wrap(method: Callable[..., Any]) -> Callable[..., Any]:
                     value = result.get(key)
                     if isinstance(value, str) and re.fullmatch(r"[a-z-]+_[a-f0-9]{20}", value):
                         completion[key] = value
-            journal.append(completion, finish=operation_id)
+            clear_lease = (
+                bound.get("lease_ref")
+                if method.__name__ == "release" and bound.get("body", {}).get("action") == "kill"
+                else None
+            )
+            if clear_lease:
+                completion["quarantine_resolution"] = "lease_destroyed"
+            journal.append(completion, finish=operation_id, clear_lease=clear_lease)
             return result
         except AuditUnavailable as error:
             raise AdapterError(
@@ -173,6 +204,12 @@ def _wrap(method: Callable[..., Any]) -> Callable[..., Any]:
                 "durable audit unavailable; operator reconciliation may be required",
             ) from error
         finally:
-            _parent.reset(token)
+            try:
+                locks.close()
+            finally:
+                if execution_token is not None:
+                    _exec_lock.reset(execution_token)
+                _parent.reset(token)
+                _action.reset(action_token)
 
     return wrapped

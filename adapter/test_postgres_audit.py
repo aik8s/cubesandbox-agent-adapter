@@ -63,6 +63,29 @@ class PostgresAuditTest(unittest.TestCase):
         one.acknowledge(first[0], "http")
         self.assertEqual(one.counts()[0], 79)
 
+    def test_quarantined_result_does_not_fence_other_writers_or_restart(self):
+        one, two = self.journal(), self.journal()
+        one.append({"action": "exec", "lease_ref": "lease_test"}, begin="uncertain-exec")
+        one.append(
+            {"action": "exec", "outcome": "uncertain"},
+            finish="uncertain-exec",
+            quarantine_lease="lease_test",
+        )
+        self.assertTrue(two.lease_quarantined("lease_test"))
+        self.assertEqual(one.pending_operations(), [])
+        two.ensure_ready()
+        one.close()
+        two.ensure_ready()
+        three = self.journal()
+        self.assertTrue(three.lease_quarantined("lease_test"))
+        three.append(
+            {"action": "release", "quarantine_resolution": "lease_destroyed"},
+            clear_lease="lease_test",
+        )
+        self.assertFalse(two.lease_quarantined("lease_test"))
+        self.assertEqual(three.quarantine_operations(), [])
+        verify_chain(three)
+
     def test_live_intent_is_allowed_but_dead_owner_blocks_all_replicas(self):
         one = self.journal()
         one.append({"action": "external", "phase": "intent"}, begin="incomplete")

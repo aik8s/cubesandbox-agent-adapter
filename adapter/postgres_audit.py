@@ -87,6 +87,12 @@ class PostgresAuditJournal:
                 self.db.execute(
                     "CREATE INDEX IF NOT EXISTS pending_operations ON operations(owner_id) WHERE NOT completed"
                 )
+                self.db.execute("""CREATE TABLE IF NOT EXISTS lease_quarantines (
+                    operation_id TEXT PRIMARY KEY REFERENCES operations(operation_id),
+                    lease_ref TEXT NOT NULL, resolved BOOLEAN NOT NULL DEFAULT FALSE)""")
+                self.db.execute(
+                    "CREATE INDEX IF NOT EXISTS quarantine_by_lease ON lease_quarantines(lease_ref,resolved)"
+                )
                 self.db.execute(
                     "CREATE INDEX IF NOT EXISTS audit_tenant_seq ON events((payload->>'tenant_hash'),seq)"
                 )
@@ -195,7 +201,13 @@ class PostgresAuditJournal:
         return value
 
     def append(
-        self, event: dict[str, Any], *, begin: str | None = None, finish: str | None = None
+        self,
+        event: dict[str, Any],
+        *,
+        begin: str | None = None,
+        finish: str | None = None,
+        quarantine_lease: str | None = None,
+        clear_lease: str | None = None,
     ) -> dict[str, Any]:
         from psycopg.types.json import Jsonb
 
@@ -216,12 +228,47 @@ class PostgresAuditJournal:
                     ).fetchone()
                     if row is None:
                         raise AuditUnavailable("operation owner or intent mismatch")
+                if quarantine_lease:
+                    if not finish:
+                        raise AuditUnavailable("quarantine requires a committed result")
+                    self.db.execute(
+                        "INSERT INTO lease_quarantines(operation_id,lease_ref) VALUES(%s,%s)",
+                        (finish, quarantine_lease),
+                    )
+                if clear_lease:
+                    self.db.execute(
+                        "UPDATE lease_quarantines SET resolved=TRUE WHERE lease_ref=%s",
+                        (clear_lease,),
+                    )
             return value
         except Exception as error:
             self.failed = True
             raise AuditUnavailable(
                 "PostgreSQL audit commit failed; execution is blocked"
             ) from error
+
+    def lease_quarantined(self, lease_ref: str) -> bool:
+        try:
+            with self._lock:
+                return (
+                    self.db.execute(
+                        "SELECT 1 FROM lease_quarantines WHERE lease_ref=%s AND NOT resolved LIMIT 1",
+                        (lease_ref,),
+                    ).fetchone()
+                    is not None
+                )
+        except Exception as error:
+            self.failed = True
+            raise AuditUnavailable("lease quarantine authority unavailable") from error
+
+    def quarantine_operations(self) -> list[dict[str, Any]]:
+        with self._lock:
+            return [
+                {**row[0], "quarantined": True}
+                for row in self.db.execute(
+                    "SELECT o.intent FROM lease_quarantines q JOIN operations o USING(operation_id) WHERE NOT q.resolved ORDER BY o.operation_id"
+                )
+            ]
 
     def pending_operations(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -315,7 +362,11 @@ class PostgresAuditJournal:
                 "UPDATE operations SET completed=TRUE WHERE operation_id=%s AND NOT completed RETURNING operation_id",
                 (operation_id,),
             ).fetchone()
-            if row is None:
+            quarantine = self.db.execute(
+                "UPDATE lease_quarantines SET resolved=TRUE WHERE operation_id=%s AND NOT resolved RETURNING operation_id",
+                (operation_id,),
+            ).fetchone()
+            if row is None and quarantine is None:
                 raise ValueError("unknown or already reconciled operation")
             self._insert(
                 {
@@ -393,7 +444,7 @@ def import_sqlite(target: PostgresAuditJournal, source_path: str) -> dict[str, A
     source = AuditJournal(source_path, ())
     saved_sinks = target.sinks
     try:
-        if source.pending_operations():
+        if source.pending_operations() or source.quarantine_operations():
             raise AuditUnavailable("reconcile source operations before migration")
         verification = verify_chain(source)
         with target._lock, target.db.transaction():

@@ -67,6 +67,11 @@ class AdapterMetrics:
             "In-flight or unresolved operations; -1 if unavailable.",
             registry=self.registry,
         )
+        self.audit_quarantined = Gauge(
+            "cube_adapter_audit_quarantined_operations",
+            "Durably recorded uncertain executions isolated to leases; -1 if unavailable.",
+            registry=self.registry,
+        )
         self.gc_actions = Counter(
             "cube_adapter_gc_actions_total",
             "Lease garbage-collection outcomes.",

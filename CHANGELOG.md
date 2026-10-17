@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- Isolate durably recorded synchronous execution timeouts/unknown outcomes to the
+  affected lease instead of making every client unavailable. Return `504
+  execution_timeout` or `502 execution_outcome_unknown`; block retries/mutations
+  with `409 lease_quarantined`, while allowing inspection and kill cleanup.
+- Persist lease quarantines atomically with the uncertain result in SQLite and
+  PostgreSQL, retain original audit events, expose quarantine metrics and an
+  offline inspection command. Storage/commit failures and incomplete crash
+  intents still fail closed globally. Kill clears containment, not history or the
+  original unknown outcome.
+- Guide OpenClaw/DSH to use asynchronous jobs for long commands.
+
 ## v0.6.0 — 2026-10-15
 
 ### Production execution features

@@ -27,6 +27,7 @@ def main() -> None:
     parser.add_argument("--schema", default="cube_adapter_audit")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("pending")
+    commands.add_parser("quarantines")
     export = commands.add_parser("export")
     export.add_argument(
         "--output", help="Exclusive private JSONL archive; creates a SHA256 manifest too"
@@ -59,6 +60,8 @@ def main() -> None:
     try:
         if args.command == "pending":
             print(json.dumps(journal.pending_operations(), indent=2))
+        elif args.command == "quarantines":
+            print(json.dumps(journal.quarantine_operations(), indent=2))
         elif args.command == "export":
             if args.output:
                 export_archive(journal, args.output)

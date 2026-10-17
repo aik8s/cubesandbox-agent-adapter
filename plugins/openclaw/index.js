@@ -98,7 +98,7 @@ const definitions = [
   {
     name: "cube_exec",
     label: "CubeSandbox Exec",
-    description: "Execute a shell command inside this conversation's isolated CubeSandbox MicroVM.",
+    description: "Execute a short shell command inside this conversation's isolated CubeSandbox MicroVM. Use cube_job_start for long commands such as sleep 300. If execution times out or its outcome is unknown, do not retry; inspect cube_status or release with action=kill.",
     parameters: object(
       {
         command: { type: "string", description: "Shell command to run inside the MicroVM." },

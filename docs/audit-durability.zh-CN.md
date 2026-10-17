@@ -7,6 +7,36 @@ v0.6.0 新增 PostgreSQL 多写入路径、查询/审批控制台与离线迁移
 
 ## 能保证什么
 
+### 同步执行异常隔离（待发布修复）
+
+同步命令超时返回 `504 execution_timeout`，其他无法确认结果的同步执行异常返回
+`502 execution_outcome_unknown`。只要审计提交成功，会原子保存“结果不确定”事件和租约隔离记录，
+而不是将整个 Adapter 锁成 503。这里完成的是审计记录，不代表命令执行成功。
+其他租约继续可用；对隔离租约重试执行或修改内容，返回 `409 lease_quarantined`。
+
+状态、文件及任务输出查询、任务取消仍然可用。`cube_release(action=kill)` 确认销毁后，
+在完成审计的同一事务中解除隔离，不改写或删除原先的不确定结果。暂停不能解除隔离。
+并发重试也必须等隔离记录提交后再检查，不能趁异常返回的间隙重跑命令。
+
+隔离记录保存在 SQLite/PostgreSQL 中，重启后仍在，PostgreSQL 多写入实例共享同一限制。
+内存模式的租约状态本身仍不会跨重启保留，需要 Redis 才能恢复原租约查询与清理。
+长任务如 `sleep 300` 应使用 `cube_job_start`，随后查询或取消；不要盲目重试超时的同步命令。
+
+审计写入或事务提交失败、崩溃遗留的未完成意图、其他未分类的外部操作异常，仍然全局闭锁。
+这不是关闭 required 审计，也不会自动把未知结果补成成功。
+指标 `cube_adapter_audit_quarantined_operations` 用于查看租约级未处理的隔离操作，
+与全局 `cube_adapter_audit_blocked`、`cube_adapter_audit_incomplete_operations` 区分。
+
+停服后可查询隔离记录：
+
+```sh
+python -m adapter.audit_admin --database /var/log/cube-adapter/audit.jsonl.sqlite3 quarantines
+```
+
+独立核查后，可继续使用 `reconcile --operation-id ... --note ...` 记录人工核对，
+它仍不代表原命令执行成功。迁移 PostgreSQL 前须先处理隔离记录。升级仅增加表和索引，
+先备份原卷；有活动隔离时不要回滚到不识别隔离记录的旧镜像。
+
 `CUBE_ADAPTER_AUDIT_MODE=required` 为 v0.5.0 运行时默认值：
 
 - 每次受控操作先提交持久化的执行意图，才进入权限检查、状态修改或后端调用。

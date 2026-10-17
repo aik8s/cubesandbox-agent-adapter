@@ -75,7 +75,7 @@ export function apply(ctx, config = {}) {
   ctx.systemPrompt.section({
     name: "tool:cube-adapter",
     order: 104,
-    text: "Use cube_task_* for approved trusted tasks. Use the other cube_* tools only when the identity allows general execution. Approval always uses a separate production identity.",
+    text: "Use cube_task_* for approved trusted tasks. Use the other cube_* tools only when the identity allows general execution. Approval always uses a separate production identity. Use cube_job_start for long commands such as sleep 300, then query or cancel the job. Do not synchronously wait for long commands with cube_exec. If execution times out or its outcome is unknown, do not retry; inspect cube_status and release with action=kill when cleanup is requested.",
   });
 
   const register = (definition) => {
@@ -85,7 +85,7 @@ export function apply(ctx, config = {}) {
   const definitions = [
     [
       "cube_exec",
-      "Execute a shell command inside this DSH session's isolated CubeSandbox MicroVM.",
+      "Execute a short shell command inside this DSH session's isolated CubeSandbox MicroVM. Use cube_job_start for long commands. On an unknown outcome do not retry; inspect status or kill the lease.",
       object(
         {
           command: { type: "string" },
