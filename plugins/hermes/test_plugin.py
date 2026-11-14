@@ -91,8 +91,11 @@ class HermesPluginTest(unittest.TestCase):
                 "cube_mcp_call",
                 "cube_renew",
                 "cube_profiles",
+                "cube_doctor",
                 "cube_recover",
                 "cube_job_resume",
+                "cube_checkpoint_list",
+                "cube_checkpoint_delete",
             },
         )
         self.assertEqual(result["executor"], "cubesandbox-microvm")
@@ -106,6 +109,21 @@ class HermesPluginTest(unittest.TestCase):
                 )
         self.assertTrue(calls[2][0].endswith("/v1/tasks/plan"))
         self.assertEqual(calls[2][1]["template"], "train-logistic")
+        with mock.patch.dict(os.environ, {"CUBE_ADAPTER_TOKEN": "test-token"}, clear=False):
+            with mock.patch("plugins.hermes.urlopen", side_effect=fake_urlopen):
+                context.tools["cube_doctor"]["handler"]({})
+        self.assertTrue(calls[3][0].endswith("/v1/doctor"))
+        self.assertEqual(len(calls), 4)
+        with mock.patch.dict(os.environ, {"CUBE_ADAPTER_TOKEN": "test-token"}, clear=False):
+            with mock.patch("plugins.hermes.urlopen", side_effect=fake_urlopen):
+                context.tools["cube_checkpoint"]["handler"]({"mode": "fs-only"}, task_id="session")
+                context.tools["cube_checkpoint_list"]["handler"]({}, task_id="session")
+                context.tools["cube_checkpoint_delete"]["handler"](
+                    {"checkpoint_ref": "checkpoint_0123456789abcdefabcd"}, task_id="session"
+                )
+        self.assertEqual(calls[5][1]["mode"], "fs-only")
+        self.assertTrue(calls[7][0].endswith("/checkpoints/list"))
+        self.assertTrue(calls[9][0].endswith("/checkpoints/checkpoint_0123456789abcdefabcd/delete"))
 
     def test_missing_token_hides_tools_and_returns_redacted_error(self):
         context = FakeContext({"token_env": "MISSING_CUBE_TOKEN"})

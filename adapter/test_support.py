@@ -139,6 +139,7 @@ class FakePty:
 @dataclass
 class FakeSnapshot:
     snapshot_id: str
+    mode: str = "full"
 
 
 class FakeSandbox:
@@ -205,8 +206,9 @@ class FakeSandbox:
             raise SandboxNotFoundError("sandbox no longer exists")
         self.last_timeout = timeout
 
-    def create_snapshot(self, name=None):
-        return FakeSnapshot(f"snapshot-{name or len(self.created)}")
+    def create_snapshot(self, name=None, *, mode=None):
+        self.last_snapshot_mode = mode
+        return FakeSnapshot(f"snapshot-{name or len(self.created)}", mode or "full")
 
     def rollback(self, snapshot_id):
         self.rolled_back_to = snapshot_id

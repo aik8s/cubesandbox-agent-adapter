@@ -35,7 +35,7 @@ ALLOWED_FIELDS: Dict[str, frozenset[str]] = {
     "pty_input": frozenset({"data", "request_id"}),
     "pty_resize": frozenset({"rows", "cols", "request_id"}),
     "pty_kill": frozenset({"request_id"}),
-    "checkpoint_create": frozenset({"name", "request_id"}),
+    "checkpoint_create": frozenset({"name", "mode", "request_id"}),
     "checkpoint_action": frozenset({"branch", "request_id"}),
     "task_plan": frozenset({"template", "parameters", "request_id"}),
     "task_approve": frozenset({"decision", "reason", "request_id"}),
@@ -109,6 +109,12 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                     return
 
                 auth = self._auth(adapter)
+                if path == "/v1/identity":
+                    self._json(200, {"authenticated": True})
+                    return
+                if path == "/v1/tasks":
+                    self._json(200, adapter.task_inventory(auth))
+                    return
                 if path == "/v1/leases":
                     adapter.authorize(auth, "lease:list")
                     self._json(200, adapter.list_leases(auth))
@@ -180,12 +186,14 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
             try:
                 auth = self._auth(adapter)
                 path = urlparse(self.path).path
-                if path in {"/v1/profiles", "/v1/recover", "/v1/task-plans"}:
+                if path in {"/v1/profiles", "/v1/recover", "/v1/task-plans", "/v1/doctor", "/v1/tasks"}:
                     self._body("empty")
                     profile_handlers = {
                         "/v1/profiles": adapter.discover,
                         "/v1/recover": adapter.recover,
                         "/v1/task-plans": adapter.task_plans,
+                        "/v1/doctor": adapter.doctor,
+                        "/v1/tasks": adapter.task_inventory,
                     }
                     self._json(200, profile_handlers[path](auth))
                     return
@@ -347,6 +355,13 @@ def make_handler(adapter: CubeAdapter) -> type[BaseHTTPRequestHandler]:
                         "kill": adapter.pty_kill,
                     }
                     self._json(200, pty_handlers[action](pty_ref, body, auth))
+                    return
+
+                match = re.fullmatch(r"/v1/leases/([^/]+)/checkpoints/list", path)
+                if match:
+                    self._body("empty")
+                    adapter.authorize(auth, "checkpoint:list")
+                    self._json(200, adapter.checkpoint_list(match.group(1), auth))
                     return
 
                 match = re.fullmatch(r"/v1/leases/([^/]+)/checkpoints", path)

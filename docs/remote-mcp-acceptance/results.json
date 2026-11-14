@@ -1,0 +1,32 @@
+{
+  "date": "2026-10-27",
+  "build": "unreleased source candidate",
+  "environment": "isolated local adapter and real CubeSandbox test backend",
+  "mcp": {
+    "transport": "streamable_http_tls",
+    "protocol_versions": ["2026-07-28", "2025-11-25"],
+    "tool_discovery": "passed",
+    "doctor_and_profiles": "passed",
+    "sandbox_create_execute_release": "passed",
+    "trusted_task_and_receipt": "passed",
+    "sandbox_api_release": "verified",
+    "snapshot_storage_cleanup": "not_verified",
+    "mcp_tasks_extension": "not_advertised"
+  },
+  "opensandbox_sdk": {
+    "version": "1.1.1",
+    "direct_connection": "unsupported",
+    "default_request_http_status": 401,
+    "with_adapter_bearer_http_status": 404,
+    "sandbox_created": false
+  },
+  "native_clients": {
+    "dsh_web": "doctor_profiles_exec_release_passed",
+    "openclaw_local_agent": "doctor_profiles_exec_release_passed",
+    "codex_cli": "doctor_profiles_exec_release_passed_after_acquire_retry",
+    "opencode_cli": "doctor_profiles_exec_release_passed",
+    "hermes_cli": "doctor_profiles_exec_release_passed",
+    "new_native_screenshots": "incomplete"
+  },
+  "remaining_test_sandboxes": 0
+}

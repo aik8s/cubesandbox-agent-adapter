@@ -298,7 +298,8 @@ install_openclaw() {
     cube_checkpoint cube_rollback cube_fork cube_release \
     cube_task_plan cube_task_submit cube_task_status cube_task_result \
     cube_task_cancel cube_task_receipt \
-    cube_mcp_list cube_mcp_call cube_renew cube_profiles cube_recover cube_job_resume
+    cube_mcp_list cube_mcp_call cube_renew cube_profiles cube_doctor cube_recover cube_job_resume \
+    cube_checkpoint_list cube_checkpoint_delete
   openclaw config validate
   note "OpenClaw integration installed; restart the Gateway"
 }

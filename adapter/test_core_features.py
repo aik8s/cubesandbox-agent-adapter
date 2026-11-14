@@ -13,7 +13,13 @@ from adapter.config import AdapterConfig, AuthContext
 from adapter.core import AdapterError, CubeAdapter
 from adapter.mcp_server import AdapterHttpClient
 from adapter.state import MemoryStateStore, RecordCipher
-from adapter.test_support import FakeSandbox, FakeVolume, fake_template, reconcile_test_audit
+from adapter.test_support import (
+    FakeSandbox,
+    FakeSnapshot,
+    FakeVolume,
+    fake_template,
+    reconcile_test_audit,
+)
 
 
 class DurableMemoryState(MemoryStateStore):
@@ -208,6 +214,50 @@ profiles:
         with self.assertRaises(AdapterError) as denied:
             adapter.checkpoint_create(lease, {})
         self.assertEqual(denied.exception.code, "checkpoint_with_mount_denied")
+
+    def test_filesystem_checkpoint_forks_but_cannot_rollback(self):
+        profiles = self.write_profiles("profiles:\n  snapshots:\n    checkpoints_enabled: true\n")
+        adapter = self.adapter(self.config(profiles_file=profiles))
+        lease = self.acquire(adapter, profile="snapshots")["lease_ref"]
+        with self.assertRaises(AdapterError) as invalid:
+            adapter.checkpoint_create(lease, {"mode": "memory-only"})
+        self.assertEqual(invalid.exception.code, "invalid_checkpoint_mode")
+        checkpoint = adapter.checkpoint_create(lease, {"name": "files", "mode": "fs-only"})
+        self.assertEqual(checkpoint["mode"], "fs-only")
+        self.assertEqual(FakeSandbox.created[0].last_snapshot_mode, "fs-only")
+        self.assertEqual(adapter.checkpoint_list(lease)["checkpoints"][0]["mode"], "fs-only")
+        other = self.acquire(adapter, session="other", profile="snapshots")["lease_ref"]
+        with self.assertRaises(AdapterError) as cross_lease:
+            adapter.checkpoint_delete(other, checkpoint["checkpoint_ref"], {})
+        self.assertEqual(cross_lease.exception.code, "checkpoint_not_found")
+        with self.assertRaises(AdapterError) as denied:
+            adapter.checkpoint_rollback(lease, checkpoint["checkpoint_ref"], {})
+        self.assertEqual(denied.exception.code, "checkpoint_rollback_unsupported")
+        self.assertIsNone(FakeSandbox.created[0].rolled_back_to)
+        fork = adapter.checkpoint_fork(lease, checkpoint["checkpoint_ref"], {})
+        self.assertNotEqual(fork["lease_ref"], lease)
+        self.assertEqual(FakeSandbox.created[-1].create_args["template"], "snapshot-files")
+
+    def test_legacy_checkpoint_record_defaults_to_full(self):
+        from adapter.state import CheckpointRecord
+
+        record = CheckpointRecord.from_dict({
+            "checkpoint_ref": "checkpoint_123", "lease_ref": "lease_123",
+            "tenant_id": "tenant", "snapshot_id": "snapshot_123", "name": None,
+        })
+        self.assertEqual(record.mode, "full")
+
+    def test_filesystem_checkpoint_rejects_and_deletes_unconfirmed_mode(self):
+        profiles = self.write_profiles("profiles:\n  snapshots:\n    checkpoints_enabled: true\n")
+        deleted = []
+        adapter = self.adapter(self.config(profiles_file=profiles), snapshot_deleter=deleted.append)
+        lease = self.acquire(adapter, profile="snapshots")["lease_ref"]
+        FakeSandbox.created[0].create_snapshot = lambda **kwargs: FakeSnapshot("unexpected-full")
+        with self.assertRaises(AdapterError) as mismatch:
+            adapter.checkpoint_create(lease, {"mode": "fs-only"})
+        self.assertEqual(mismatch.exception.code, "checkpoint_mode_mismatch")
+        self.assertEqual(deleted, ["unexpected-full"])
+        self.assertEqual(adapter.checkpoint_list(lease)["checkpoints"], [])
 
     def test_kill_cleans_snapshots_after_sandbox_and_preserves_retry_state(self):
         profiles = self.write_profiles(

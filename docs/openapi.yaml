@@ -29,6 +29,27 @@ paths:
       requestBody: { $ref: "#/components/requestBodies/Empty" }
       responses:
         "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/identity:
+    get:
+      operationId: verifyIdentity
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/doctor:
+    post:
+      operationId: diagnoseAccess
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+  /v1/tasks:
+    get:
+      operationId: listTasks
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
+    post:
+      operationId: listTasksViaPost
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
   /v1/recover:
     post:
       operationId: recoverInventory
@@ -334,6 +355,13 @@ paths:
       responses:
         "201": { $ref: "#/components/responses/JsonSuccess" }
         "409": { $ref: "#/components/responses/Error" }
+  /v1/leases/{lease_ref}/checkpoints/list:
+    post:
+      operationId: listCheckpointsPost
+      parameters: [{ $ref: "#/components/parameters/LeaseRef" }]
+      requestBody: { $ref: "#/components/requestBodies/Empty" }
+      responses:
+        "200": { $ref: "#/components/responses/JsonSuccess" }
   /v1/leases/{lease_ref}/checkpoints/{checkpoint_ref}/rollback:
     post:
       operationId: rollbackCheckpoint
@@ -727,6 +755,7 @@ components:
       additionalProperties: false
       properties:
         name: { type: string, minLength: 1, maxLength: 128 }
+        mode: { type: string, enum: [full, fs-only], default: full, description: "fs-only saves only the root filesystem; fork cold-starts and rollback is unsupported." }
         request_id: { $ref: "#/components/schemas/RequestId" }
     CheckpointActionRequest:
       type: object

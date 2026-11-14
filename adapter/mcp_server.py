@@ -248,9 +248,25 @@ def build_mcp_server(client: Optional[AdapterHttpClient] = None, *, profile: Opt
         return api.post(f"/v1/tasks/{api.segment(task_ref)}/receipt", {})
 
     @mcp.tool()
-    def cube_checkpoint(lease_ref: str, name: Optional[str] = None) -> dict:
-        """Create a gated microVM checkpoint for a lease."""
-        return api.post(f"/v1/leases/{api.segment(lease_ref)}/checkpoints", _compact(name=name))
+    def cube_checkpoint(
+        lease_ref: str, name: Optional[str] = None, mode: Optional[str] = None
+    ) -> dict:
+        """Create a full or fs-only checkpoint; fs-only forks cold and cannot roll back."""
+        return api.post(
+            f"/v1/leases/{api.segment(lease_ref)}/checkpoints", _compact(name=name, mode=mode)
+        )
+
+    @mcp.tool()
+    def cube_checkpoint_list(lease_ref: str) -> dict:
+        """List checkpoints belonging to this lease."""
+        return api.post(f"/v1/leases/{api.segment(lease_ref)}/checkpoints/list", {})
+
+    @mcp.tool()
+    def cube_checkpoint_delete(lease_ref: str, checkpoint_ref: str) -> dict:
+        """Delete one checkpoint belonging to this lease, subject to policy."""
+        return api.post(
+            f"/v1/leases/{api.segment(lease_ref)}/checkpoints/{api.segment(checkpoint_ref)}/delete", {}
+        )
 
     @mcp.tool()
     def cube_rollback(lease_ref: str, checkpoint_ref: str) -> dict:
@@ -278,6 +294,11 @@ def build_mcp_server(client: Optional[AdapterHttpClient] = None, *, profile: Opt
     def cube_profiles() -> dict:
         """Discover server-authorized cluster profiles, without exposing endpoints."""
         return api.post("/v1/profiles", {})
+
+    @mcp.tool()
+    def cube_doctor() -> dict:
+        """Diagnose authorized profiles and Adapter dependencies without executing work."""
+        return api.post("/v1/doctor", {})
 
     @mcp.tool()
     def cube_recover() -> dict:

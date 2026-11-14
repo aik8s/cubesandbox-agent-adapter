@@ -1,6 +1,126 @@
 # CubeSandbox upstream status / 上游状态
 
-Checked on 2026-10-14 / 核对日期：2026-10-14.
+Checked on 2026-11-14 / 核对日期：2026-11-14.
+
+## v0.8.0：Adapter 兼容性和快照实测（2026-11-14）
+
+sr1 使用单个 x86_64 计算节点、Pod 网络和 XFS 模板；CubeSandbox 后端及
+PyPI Python SDK 均为 v0.8.0。测试启动当前工作区源码的独立本地 Adapter，
+经 HTTP 和 MCP stdio 调用真实后端，不修改已有的生产 Adapter 部署。
+
+| 实测项目 | 结果 |
+| --- | --- |
+| 鉴权、租约复用、命令、文件和二进制附件 | 通过 |
+| 异步任务完成和取消、PTY 创建/输入/调整/关闭 | 通过 |
+| 完整快照与回滚 | 通过，回滚后读取原文件 |
+| 新沙箱 fs-only 快照和分支 | 通过，快照前文件保留、后续修改隔离，分支未继承原进程 |
+| MCP stdio 创建、列出、删除 fs-only 快照；远程 MCP 列表调用 | 通过 |
+| 可信任务执行、清理和签名回执 | 通过 |
+| 审计记录与资源清理 | 通过，测试创建的三个租约均清理；额外快照按名称核对删除 |
+
+`cube_checkpoint` 默认仍为完整快照，可显式传 `mode: "fs-only"`；新加
+`cube_checkpoint_list`、`cube_checkpoint_delete`，各自要求 `checkpoint:list`、
+`checkpoint:delete` 权限。文件系统快照不保存内存和进程，不可原地回滚；
+`cube_fork` 从它冷启动新沙箱。外部挂载不随之保存，不能拿它承诺进程断点续跑。
+旧记录没有 `mode` 字段时按完整快照读取；服务端未确认 fs-only 模式时会删除返回的
+快照并拒绝成功响应。旧模板仍可能携带旧 shim，需在升级后单独验收。
+
+另两次按“创建完整快照 → 回滚 → 在同一沙箱创建 fs-only 快照”的顺序测试，
+上游返回 `snapshot_filesystem_only_rootfs_unsupported`；Adapter 返回 502。
+失败操作留下的快照记录使结果存在不确定性，必需审计模式随后阻止常规清理；
+本次按测试专用标识核对并清理了沙箱和快照。这个现象只针对本次 XFS 和测试顺序，
+原因尚未进一步定位；不要自动重试或将其泛化为所有存储后端。遇到类似问题应保留
+审计记录，核对实际沙箱和快照状态后再按运维流程处理。
+
+[脱敏验收结果](evidence/v080-adapter-sr1-2026-11-14.json)；
+[可重复执行的实测脚本](../tests/acceptance/cubesandbox_v080_adapter_live.py)。
+本轮没有覆盖生产升级、跨节点恢复、所有旧后端和所有原生客户端界面；单元测试
+在 Python 3.10、3.12、3.14 上各运行 92 项（85 通过、7 项因未配置存储而跳过），
+这 7 项随后在本机独立 Redis 与 PostgreSQL 容器中全部通过。上游升级步骤和实测见
+[CubeSandbox v0.8.0 升级实战](https://aik8s.run/ai-k8s/rag-agent/cubesandbox-v080-upgrade-practice/)。
+
+### English summary
+
+Against one sr1 x86_64 compute node with Pod networking and XFS, the current-source
+Adapter passed real HTTP lifecycle, file and artifact operations, async jobs and
+cancellation, PTY operations, full snapshot rollback, filesystem-only snapshot fork,
+MCP stdio snapshot create/list/delete, remote MCP listing, a trusted task and signed receipt, and audit.
+All three test leases and the run's snapshots were cleaned. This did not exercise
+production, cross-node recovery, every older backend, or every native client UI.
+
+The default checkpoint remains `full`; `fs-only` captures root filesystem state,
+not running processes or memory. It supports a cold-start fork and is rejected for
+in-place rollback. External mounts remain separate. A subsequent fs-only snapshot
+after a full rollback failed twice with `snapshot_filesystem_only_rootfs_unsupported`
+on the tested XFS backend, and the uncertain audited operation blocked normal
+cleanup. The test resources were reconciled separately. Do not automatically retry
+or assume the same outcome across storage backends.
+
+## v0.7.3：S3lvol 单节点验收（2026-10-26）
+
+这次单独启用 CubeS3lvol，新建 `backend=s3` 模板和独立测试 Bucket，
+验证 VM 快照的 S3 存储链路。此前的 S3 外部卷测试只验证沙箱挂载对象存储，
+不能代替这项验收。测试限于现有一个计算节点，没有扩节点或改生产环境。
+
+后端、CubeS3lvol 和 Python SDK 均为 v0.7.3。沙箱规格为 1 vCPU、512 MiB
+内存、1 GiB 可写层；模板产物仍使用原有 S3 artifact store。
+测试池 journal / WAL / cache 分别为 128 / 2048 / 4096 MiB。
+S3 后端在创建模板时指定，后续沙箱、快照和暂停包继承该选择；
+控制面记录的 `remote_status=ready` 是每次恢复前核对的条件。
+[官方存储与调度说明](https://docs.cubesandbox.com/guide/cross-node-snapshot)
+介绍了后端继承及源节点优先的行为。
+
+| 实测项 | 结果 |
+| --- | --- |
+| S3 模板构建、创建沙箱、执行命令 | 通过 |
+| 写入 2 MiB 文件、创建快照并等待远端就绪 | 通过，远端就绪等待 4.83 秒 |
+| 修改文件后 Rollback | SHA-256 一致 |
+| 从快照创建新沙箱 | SHA-256 一致 |
+| Clone 后修改克隆文件 | 原沙箱文件不变 |
+| 删除仍被恢复实例使用的快照 | 现有实例可读，再用该快照创建返回 404 |
+| 连续 3 轮 Pause / Resume | 文件校验均通过；暂停包远端就绪等待 4.91 / 4.79 / 7.09 秒 |
+| API 清理 | 3 个测试沙箱均返回 404，测试模板已注销，暂停包记录为 0 |
+| 底层自动回收 | 未完成，见下文 |
+
+这些等待时间从快照或暂停 API 返回后开始计算，包含状态轮询和端口转发，
+不是快照或暂停操作的总耗时。本轮恢复留在源节点，读取以本地缓存命中为主，
+尚未验证冷拉取、跨节点恢复、宿主机掉电或满环 WAL 重放。
+
+### 删除返回成功，回收仍有残留
+
+测试结束后只通过正常 API 删除自建沙箱、快照和模板，再持续观察约 301 秒。
+`rcow_get_exports` 已为空，`rcow_get_lvstores` 只剩 2 个引擎基础卷，
+但 `rcow_get_pending_deletes` 仍有 2 条 `reason=failed` 记录。
+日志中对应的异步删除返回 `Device or resource busy`，SPDK 随后报告 forced removal。
+独立 Bucket 从基线 4 个对象、1,073,312 字节，变为 215 个对象、209,761,652 字节
+（200.04 MiB），观察期间没有继续下降到基线。
+
+随后执行一次官方 `s3lvol_rpc.py --retry-pending`。命令退出码为 0，提示
+`no pending snapshot deletes to retry`，但再次查询仍有 2 条失败意图。
+这两个 lvol 已不在卷清单中，而工具从卷清单选择可重试对象，因此这次重试没有
+消除残留。此处记录的是观察窗口内的回收不完整，尚未确认残留对象的完整归属及
+是否会永久泄漏；没有手工删数据库记录或删除 S3 对象。
+
+[v0.7.3 的 S3lvol 运维说明](https://github.com/TencentCloud/CubeSandbox/blob/v0.7.3/CubeS3lvol/README.md#retrying-a-refused-snapshot-delete---retry-pending)
+也说明删除可能延迟，异步失败需要显式处理，集群删除路径不会自动运行重试工具。
+本次确实观察到了清理残留，但没有复现“必须删库、清空 S3 才能恢复”的情况。
+
+上游另有 [#1971](https://github.com/TencentCloud/CubeSandbox/issues/1971)：
+维护者确认 v0.7.3 的 WAL 重放会重新应用已被 checkpoint 覆盖的旧记录，
+可能覆盖较新的元数据并导致 `EILSEQ`；不是 issue 最初猜测的 flusher 等待边界。
+截至 2026-10-26，相关 [#1996](https://github.com/TencentCloud/CubeSandbox/pull/1996)
+仍未合并。这次正常路径测试没有触发该场景。
+
+### 证据与环境收尾
+
+- [脱敏实测结果](assets/cubesandbox-s3lvol/v073-single-node-2026-10-26.json)
+  分别保存功能结果、回收观察序列和显式重试结果。
+- [Light 模式报告源文件](assets/cubesandbox-s3lvol/v073-single-node-2026-10-26-light.html)
+  与下图来自同一份结果数据。
+- 测试后恢复原部署配置，关闭临时启用的 S3lvol；原有模板、镜像配置和凭据保留。
+  恢复后再用原模板验证创建、执行、删除。独立测试 Bucket、WAL 和日志保留供排查。
+
+![CubeSandbox v0.7.3 S3lvol 单节点实测报告，Light 模式](assets/cubesandbox-s3lvol/v073-single-node-2026-10-26-light.png)
 
 ## v0.7.3：升级和实测（2026-10-14）
 

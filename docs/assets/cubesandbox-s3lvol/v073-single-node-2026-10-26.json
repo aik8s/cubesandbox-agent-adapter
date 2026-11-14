@@ -1,0 +1,299 @@
+{
+  "date": "2026-10-26",
+  "backend_version": "0.7.3",
+  "sdk_version": "0.7.3",
+  "scope": "One existing physical compute node; no additional compute nodes",
+  "storage": {
+    "template_artifacts": "s3",
+    "template_backend": "s3",
+    "vm_snapshot_backend": "s3",
+    "object_store": "MinIO",
+    "dedicated_test_bucket": true,
+    "journal_mib": 128,
+    "wal_mib": 2048,
+    "cache_mib": 4096
+  },
+  "sandbox_spec": {
+    "cpu_millicores": 1000,
+    "memory_mib": 512,
+    "writable_layer": "1Gi"
+  },
+  "functional_result": "PASS",
+  "checks": {
+    "template-readiness": "PASS",
+    "create-execute-and-file-integrity": "PASS",
+    "s3-snapshot-remote-ready": "PASS",
+    "rollback-integrity": "PASS",
+    "restore-integrity": "PASS",
+    "clone-isolation": "PASS",
+    "delete-referenced-snapshot": "PASS",
+    "repeated-s3-pause-resume": "PASS (3 cycles)"
+  },
+  "data": {
+    "bytes": 2097152,
+    "sha256": "6b39e4c10c3925ad63d7e1173776541cc291079200eaa0a8cde9037704372008"
+  },
+  "snapshot_remote_ready": {
+    "seconds": 4.83,
+    "backend": "s3",
+    "remote_status": "ready"
+  },
+  "pause_resume_cycles": [
+    {
+      "cycle": 1,
+      "integrity": "PASS",
+      "export": {
+        "seconds": 4.91,
+        "backend": "s3",
+        "remote_status": "ready"
+      }
+    },
+    {
+      "cycle": 2,
+      "integrity": "PASS",
+      "export": {
+        "seconds": 4.79,
+        "backend": "s3",
+        "remote_status": "ready"
+      }
+    },
+    {
+      "cycle": 3,
+      "integrity": "PASS",
+      "export": {
+        "seconds": 7.09,
+        "backend": "s3",
+        "remote_status": "ready"
+      }
+    }
+  ],
+  "deleted_snapshot_http_status": 404,
+  "api_cleanup": {
+    "owned_sandbox_statuses": [
+      404,
+      404,
+      404
+    ],
+    "new_create_from_deleted_snapshot_http_status": 404,
+    "owned_template_unregistered": true,
+    "pause_snapshot_records_remaining": 0
+  },
+  "automatic_gc": {
+    "result": "INCOMPLETE",
+    "samples": [
+      {
+        "elapsed_seconds": 1.4,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761812,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      },
+      {
+        "elapsed_seconds": 22.7,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761812,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      },
+      {
+        "elapsed_seconds": 44.4,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761652,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      },
+      {
+        "elapsed_seconds": 65.8,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761652,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      },
+      {
+        "elapsed_seconds": 87.3,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761652,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      },
+      {
+        "elapsed_seconds": 108.6,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761652,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      },
+      {
+        "elapsed_seconds": 130.0,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761652,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      },
+      {
+        "elapsed_seconds": 151.3,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761652,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      },
+      {
+        "elapsed_seconds": 172.6,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761652,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      },
+      {
+        "elapsed_seconds": 194.5,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761652,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      },
+      {
+        "elapsed_seconds": 215.9,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761652,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      },
+      {
+        "elapsed_seconds": 237.2,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761652,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      },
+      {
+        "elapsed_seconds": 258.5,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761652,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      },
+      {
+        "elapsed_seconds": 279.9,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761652,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      },
+      {
+        "elapsed_seconds": 301.2,
+        "lvol_count": 2,
+        "non_base_lvol_count": 0,
+        "export_count": 0,
+        "pending_delete_count": 2,
+        "s3_object_count": 215,
+        "s3_bytes": 209761652,
+        "flush_failures": 0,
+        "checkpoint_failures": 0
+      }
+    ],
+    "baseline_objects": 4,
+    "baseline_bytes": 1073312,
+    "last_pending_reasons": [
+      "failed",
+      "failed"
+    ],
+    "error_observation": "Two asynchronous lvol destroys returned EBUSY after SPDK forced removal. Failed intents remained, while their lvols were absent from the inventory.",
+    "interpretation": "Residual objects and failed intents were observed; permanent leakage and exact object ownership were not established."
+  },
+  "operator_retry": {
+    "command": "s3lvol_rpc.py --retry-pending",
+    "exit_code": 0,
+    "pending_before": 2,
+    "pending_after": 2,
+    "pending_lvols_absent_from_inventory": true,
+    "interpretation": "The retry process exit code alone does not prove the pending queue was cleared.",
+    "database_rows_manually_deleted": false,
+    "s3_objects_manually_deleted": false
+  },
+  "environment_restore": {
+    "original_workload_images_restored": true,
+    "existing_credentials_unchanged": true,
+    "s3lvol_disabled_as_before": true,
+    "original_ready_templates_retained": 4,
+    "post_restore_create_execute": "PASS",
+    "post_restore_canary_deleted": true,
+    "test_bucket_and_wal_retained_for_diagnosis": true,
+    "production_clusters_changed": false,
+    "host_rebooted": false,
+    "node_labels_changed": false
+  },
+  "setup_observations": [
+    "External registry pull was unavailable; the existing internal mirror was verified against the official image digest.",
+    "A build without registry credentials failed with unauthorized.",
+    "An authenticated loopback build failed with missing master_node_ip. A fresh build with an internal-service Host header and a unique annotation reached READY. The cause of the earlier failure is not established.",
+    "An fs artifact-store variant was prepared but was not deployed; the successful test retained s3 template artifacts."
+  ],
+  "not_tested": [
+    "Cross-node placement or cold import",
+    "Loss of local cache or WAL",
+    "Host reboot or power loss",
+    "Hot upgrade and full-ring WAL replay",
+    "Large-scale concurrency"
+  ],
+  "upstream": {
+    "wal_replay_issue": "https://github.com/TencentCloud/CubeSandbox/issues/1971",
+    "related_pr": "https://github.com/TencentCloud/CubeSandbox/pull/1996",
+    "pr_state_checked_2026_10_26": "open, not merged"
+  }
+}

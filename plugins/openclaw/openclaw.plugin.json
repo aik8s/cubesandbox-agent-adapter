@@ -53,8 +53,11 @@
       "cube_mcp_call",
       "cube_renew",
       "cube_profiles",
+      "cube_doctor",
       "cube_recover",
-      "cube_job_resume"
+      "cube_job_resume",
+      "cube_checkpoint_list",
+      "cube_checkpoint_delete"
     ]
   }
 }

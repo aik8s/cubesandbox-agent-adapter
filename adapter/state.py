@@ -82,6 +82,7 @@ class CheckpointRecord:
     name: Optional[str]
     backend_id: str = "default"
     created_at: float = field(default_factory=time.time)
+    mode: str = "full"
 
     @classmethod
     def from_dict(cls, value: Dict[str, Any]) -> "CheckpointRecord":

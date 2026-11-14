@@ -128,6 +128,19 @@ service:
   type: ClusterIP
   port: 18080
 
+remoteMcp:
+  enabled: false
+  port: 8788
+  # Explicit external Host values; include a port when clients send one.
+  allowedHosts: []
+  allowedOrigins: []
+  tlsSecret: ""
+  certKey: tls.crt
+  privateKeyKey: tls.key
+  resources:
+    requests: {cpu: 50m, memory: 96Mi}
+    limits: {cpu: "1", memory: 256Mi}
+
 resources:
   requests:
     cpu: 100m

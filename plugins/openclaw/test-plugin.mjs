@@ -53,7 +53,8 @@ try {
       "cube_task_result",
       "cube_task_cancel",
       "cube_task_receipt",
-      "cube_mcp_list", "cube_mcp_call", "cube_renew", "cube_profiles", "cube_recover", "cube_job_resume",
+      "cube_mcp_list", "cube_mcp_call", "cube_renew", "cube_profiles", "cube_doctor", "cube_recover", "cube_job_resume",
+      "cube_checkpoint_list", "cube_checkpoint_delete",
     ],
   );
   const exec = registrations[0].definition({ sessionKey: "openclaw-session-42" });
@@ -80,6 +81,19 @@ try {
   assert.equal(calls[3].body.profile, "production-code");
   assert.ok(calls[4].url.endsWith("/mcp-call"));
   assert.equal(calls[4].body.profile, undefined);
+  const doctor = registrations.find(({ options, definition }) => (options.name || definition.name) === "cube_doctor").definition({ sessionKey: "same-session" });
+  await doctor.execute("call-4", {}, new AbortController().signal);
+  assert.ok(calls[5].url.endsWith("/v1/doctor"));
+  assert.equal(calls.length, 6);
+  const checkpoint = registrations.find(({ options, definition }) => (options.name || definition.name) === "cube_checkpoint").definition({ sessionKey: "same-session" });
+  await checkpoint.execute("call-5", { name: "proof", mode: "fs-only" }, new AbortController().signal);
+  assert.equal(calls[7].body.mode, "fs-only");
+  const checkpointList = registrations.find(({ options, definition }) => (options.name || definition.name) === "cube_checkpoint_list").definition({ sessionKey: "same-session" });
+  await checkpointList.execute("call-6", {}, new AbortController().signal);
+  assert.ok(calls[9].url.endsWith("/checkpoints/list"));
+  const checkpointDelete = registrations.find(({ options, definition }) => (options.name || definition.name) === "cube_checkpoint_delete").definition({ sessionKey: "same-session" });
+  await checkpointDelete.execute("call-7", { checkpoint_ref: "checkpoint_test" }, new AbortController().signal);
+  assert.ok(calls[11].url.endsWith("/checkpoints/checkpoint_test/delete"));
   console.log("OpenClaw Cube Adapter plugin test: OK");
 } finally {
   globalThis.fetch = originalFetch;

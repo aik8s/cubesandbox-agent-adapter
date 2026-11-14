@@ -187,8 +187,8 @@ const definitions = [
   {
     name: "cube_checkpoint",
     label: "CubeSandbox Checkpoint",
-    description: "Create a policy-gated microVM checkpoint.",
-    parameters: object({ name: { type: "string" } }),
+    description: "Create a full or fs-only checkpoint. fs-only forks cold and cannot roll back.",
+    parameters: object({ name: { type: "string" }, mode: { type: "string", enum: ["full", "fs-only"] } }),
     call: (lease, params) => [`/v1/leases/${lease.lease_ref}/checkpoints`, params],
   },
   {
@@ -281,8 +281,13 @@ const advancedLeaseDefinitions = [
 ];
 const advancedDirectDefinitions = [
   { name: "cube_profiles", label: "CubeSandbox Profiles", description: "Discover authorized cluster profiles and capabilities.", parameters: object({}), call: () => ["/v1/profiles", {}] },
+  { name: "cube_doctor", label: "CubeSandbox Doctor", description: "Diagnose authorized profiles without creating a sandbox.", parameters: object({}), call: () => ["/v1/doctor", {}] },
   { name: "cube_recover", label: "CubeSandbox Recovery", description: "Inspect durable execution inventory without restarting unknown commands.", parameters: object({}), call: () => ["/v1/recover", {}] },
   { name: "cube_job_resume", label: "CubeSandbox Resume Logs", description: "Read independent byte-range stdout/stderr cursors without restarting a job.", parameters: object({ job_ref: { type: "string" }, stdout_offset: { type: "integer", minimum: 0 }, stderr_offset: { type: "integer", minimum: 0 }, max_bytes: { type: "integer", minimum: 1, maximum: 1048576 } }, ["job_ref"]), call: ({ job_ref, ...body }) => [`/v1/jobs/${encodeURIComponent(job_ref)}/resume`, body] },
+];
+const checkpointDefinitions = [
+  { name: "cube_checkpoint_list", label: "CubeSandbox List Checkpoints", description: "List checkpoints owned by this session's lease.", parameters: object({}), call: lease => [`/v1/leases/${lease.lease_ref}/checkpoints/list`, {}] },
+  { name: "cube_checkpoint_delete", label: "CubeSandbox Delete Checkpoint", description: "Delete one checkpoint owned by this session's lease.", parameters: object({ checkpoint_ref: { type: "string" } }, ["checkpoint_ref"]), call: (lease, { checkpoint_ref }) => [`/v1/leases/${lease.lease_ref}/checkpoints/${encodeURIComponent(checkpoint_ref)}/delete`, {}] },
 ];
 
 export default defineToolPlugin({
@@ -317,6 +322,9 @@ export default defineToolPlugin({
     }))),
     ...advancedDirectDefinitions.map(definition => tool(directTool(definition, (config, context, params, signal) => {
       const [path, body] = definition.call(params); return request(config, context, path, body, signal);
+    }))),
+    ...checkpointDefinitions.map(definition => tool(dynamicTool(definition, (config, context, lease, params, signal) => {
+      const [path, body] = definition.call(lease, params); return request(config, context, path, body, signal);
     }))),
   ],
 });

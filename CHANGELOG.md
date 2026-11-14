@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- Pin the CubeSandbox Python SDK to v0.8.0 and support filesystem-only
+  checkpoints, cold-start forks, and lease-scoped checkpoint listing/deletion.
+  Record the observed XFS limitation after a full rollback.
+- Add an opt-in Streamable HTTP MCP facade with per-request Adapter bearer
+  authentication, explicit TLS/Host requirements and a disabled-by-default Helm sidecar.
+- Add policy-scoped capability discovery, a doctor command/tool and a Light UI
+  that distinguishes task execution, sandbox release and unverified snapshot storage cleanup.
+- Exercise both MCP protocol versions against a real test CubeSandbox. Record
+  the current OpenSandbox SDK incompatibility and MCP Tasks extension gap.
 - Isolate durably recorded synchronous execution timeouts/unknown outcomes to the
   affected lease instead of making every client unavailable. Return `504
   execution_timeout` or `502 execution_outcome_unknown`; block retries/mutations

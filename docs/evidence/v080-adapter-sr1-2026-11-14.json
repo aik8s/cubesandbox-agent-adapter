@@ -1,0 +1,26 @@
+{
+  "suite": "adapter-v080-live",
+  "backend": "v0.8.0",
+  "sdk": "0.8.0",
+  "timestamp": "2026-11-14T02:32:35.760765+00:00",
+  "checks": {
+    "authentication": "PASS",
+    "acquire-reuse-exec": "PASS",
+    "filesystem-and-artifact": "PASS",
+    "async-job": "PASS",
+    "async-job-cancel": "PASS",
+    "pty-create-resize-kill": "PASS",
+    "full-checkpoint-rollback": "PASS",
+    "fs-only-checkpoint-and-fork": "PASS",
+    "mcp-stdio-checkpoint": "PASS",
+    "remote-mcp-checkpoint": "PASS",
+    "checkpoint-inventory": "PASS",
+    "trusted-task-and-receipt": "PASS",
+    "audit": "PASS"
+  },
+  "result": "PASS",
+  "cleanup": {
+    "leases": 3,
+    "errors": 0
+  }
+}

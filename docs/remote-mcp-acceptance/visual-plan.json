@@ -1,0 +1,7 @@
+{
+  "purpose": "Show the real Adapter UI after an actual MCP call and sandbox task",
+  "source": "Live local candidate connected to a CubeSandbox test backend",
+  "format": "Real browser screenshots, Light mode, sensitive task IDs masked in the DOM",
+  "files": ["01-diagnostics-light.png (1376x272)", "02-task-cleanup-light.png (1376x274)"],
+  "privacy": "No bearer tokens, internal addresses, hostnames, full resource IDs, or private paths"
+}

@@ -1194,10 +1194,22 @@ class CubeAdapter:
         name = body.get("name")
         if name is not None:
             name = _required_string(body, "name", 128)
+        mode = body.get("mode", "full")
+        if mode not in ("full", "fs-only"):
+            raise AdapterError(400, "invalid_checkpoint_mode", "mode must be full or fs-only")
         request_id = _request_id(body.get("request_id"))
         started = time.perf_counter()
         with self._lease_lock(record, max(180, self.config.lock_ttl_seconds)):
-            snapshot = self._sandbox(record).create_snapshot(name=name)
+            snapshot = self._sandbox(record).create_snapshot(
+                name=name, **({"mode": "fs-only"} if mode == "fs-only" else {})
+            )
+            if mode == "fs-only" and getattr(snapshot, "mode", None) != "fs-only":
+                self._snapshot_deleter(str(snapshot.snapshot_id), **self._backend(record).kwargs())
+                raise AdapterError(
+                    409,
+                    "checkpoint_mode_mismatch",
+                    "backend did not confirm an fs-only snapshot; the returned snapshot was deleted",
+                )
             checkpoint = CheckpointRecord(
                 checkpoint_ref=f"checkpoint_{uuid.uuid4().hex[:20]}",
                 backend_id=record.backend_id,
@@ -1205,6 +1217,7 @@ class CubeAdapter:
                 tenant_id=record.tenant_id,
                 snapshot_id=str(snapshot.snapshot_id),
                 name=name,
+                mode=mode,
             )
             self.state.put_checkpoint(checkpoint)
             self._touch(record, "running")
@@ -1215,6 +1228,7 @@ class CubeAdapter:
             "ok",
             started,
             checkpoint_ref=checkpoint.checkpoint_ref,
+            mode=mode,
         )
         return self._checkpoint_result(checkpoint, record, request_id)
 
@@ -1246,6 +1260,12 @@ class CubeAdapter:
         profile = self.profiles[record.profile]
         self._require_checkpoints(profile, record)
         checkpoint = self._checkpoint(checkpoint_ref, record, auth)
+        if checkpoint.mode == "fs-only":
+            raise AdapterError(
+                409,
+                "checkpoint_rollback_unsupported",
+                "fs-only checkpoints cannot roll back a running sandbox; fork a new lease instead",
+            )
         request_id = _request_id(body.get("request_id"))
         started = time.perf_counter()
         with self._lease_lock(record, max(180, self.config.lock_ttl_seconds)):
@@ -1735,11 +1755,76 @@ class CubeAdapter:
                     else [],
                     "mcp_enabled": bool(profile.mcp_policy),
                     "keepalive_enabled": profile.keepalive_enabled,
+                    "allowed_runtimes": [
+                        runtime for runtime in profile.allowed_runtimes
+                        if auth.permits_runtime(runtime)
+                    ],
+                    "capabilities": {
+                        "execute": "available" if auth.permits_action("exec:run") else "not_allowed",
+                        "checkpoint": (
+                            "not_allowed" if not auth.permits_action("checkpoint:create")
+                            else "available" if profile.checkpoints_enabled else "disabled"
+                        ),
+                        "cross_node_restore": "not_verified",
+                        "persistent_artifacts": "not_verified",
+                        "interactive_terminal": "available" if auth.permits_action("pty:create") else "not_allowed",
+                        "mcp": "available" if profile.mcp_policy and auth.permits_action("mcp:call") else "not_allowed" if not auth.permits_action("mcp:call") else "disabled",
+                    },
                 }
                 for profile in self.profiles.values()
                 if auth.permits_profile(profile.name)
             ]
         }
+
+    def doctor(self, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
+        """Report only authorized profiles and redact backend addresses and templates."""
+        auth = auth or _default_auth()
+        self.authorize(auth, "lease:discover")
+        discovery = self.discover(auth)
+        _, readiness = self.readiness()
+        checks = readiness.get("checks", {})
+        profiles = []
+        for item in discovery["profiles"]:
+            profile = self.profiles[item["name"]]
+            backend_id = profile.backend_id
+            template_key = (
+                f"template:{profile.template}" if backend_id == "default"
+                else f"template:{backend_id}:{profile.template}"
+            )
+            proxy_key = "cube_proxy" if backend_id == "default" else f"cube_proxy:{backend_id}"
+            profiles.append({
+                "name": profile.name,
+                "backend_id": backend_id,
+                "allowed_runtimes": item["allowed_runtimes"],
+                "template": checks.get(template_key, "unknown"),
+                "proxy": checks.get(proxy_key, "not_checked"),
+                "backend": readiness.get("backends", {}).get(backend_id, "unknown"),
+                "capabilities": item["capabilities"],
+            })
+        return {
+            "authenticated": True,
+            "state": checks.get("state", "unknown"),
+            "audit": checks.get("audit", "not_configured" if self.audit.journal is None else "ok" if not self.audit.journal.failed else "reconciliation_required"),
+            "audit_mode": self.config.audit_mode,
+            "profiles": profiles,
+        }
+
+    def task_inventory(self, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
+        auth = auth or _default_auth()
+        self.authorize(auth, "task:status")
+        tasks = sorted(
+            (task for task in self.state.list_tasks(None if auth.is_admin else auth.tenant_id)
+             if auth.permits_profile(task.profile)
+             and (auth.is_admin or task.requester_hash == self._identity_hash(auth))),
+            key=lambda task: task.created_at, reverse=True,
+        )[:500]
+        items = []
+        for task in tasks:
+            value = self._task_result_value(task)
+            value.pop("result", None)
+            value.pop("receipt", None)
+            items.append(value)
+        return {"tasks": items}
 
     def mcp_list(self, lease_ref: str, auth: Optional[AuthContext] = None) -> Dict[str, Any]:
         auth = auth or _default_auth()
@@ -2273,6 +2358,12 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
             "updated_at": _timestamp(task.updated_at),
             "result_ready": task.result is not None,
             "receipt_ready": task.receipt is not None,
+            "execution_state": task.result.get("execution_state", task.state)
+            if task.result is not None
+            else task.state,
+            "sandbox_cleanup_status": task.cleanup_status,
+            # API release cannot establish physical object-store reclamation.
+            "snapshot_storage_cleanup_status": "not_verified",
         }
         if task.result is not None:
             value["result"] = task.result
@@ -2812,6 +2903,7 @@ table{{width:100%;border-collapse:collapse;background:#fff}}th,td{{padding:12px;
             "sandbox_ref": record.sandbox_ref,
             "checkpoint_ref": checkpoint.checkpoint_ref,
             "name": checkpoint.name,
+            "mode": checkpoint.mode,
             "created_at": _timestamp(checkpoint.created_at),
         }
         if request_id is not None:

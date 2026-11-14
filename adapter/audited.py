@@ -24,7 +24,7 @@ job_start job_status job_output job_cancel pty_create pty_status pty_input pty_r
 pty_kill checkpoint_create checkpoint_list checkpoint_rollback checkpoint_delete
 checkpoint_fork list_task_templates task_plan task_approve task_plan_status
 task_submit task_status task_result task_cancel task_receipt force_gc _run_gc
-discover mcp_list mcp_call lease_renew job_resume recover task_plans audit_query""".split()
+discover doctor task_inventory mcp_list mcp_call lease_renew job_resume recover task_plans audit_query""".split()
 )
 _parent: ContextVar[str | None] = ContextVar("audit_operation", default=None)
 _action: ContextVar[str | None] = ContextVar("audit_action", default=None)

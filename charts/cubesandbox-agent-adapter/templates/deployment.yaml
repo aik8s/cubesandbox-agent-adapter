@@ -12,6 +12,15 @@ kind: Deployment
 {{- if and (eq .Values.audit.mode "required") (has (toString .Values.image.tag) (list "v0.4.0" "0.4.0")) }}
 {{- fail "v0.4.0 does not support required audit; use v0.5.0 or set audit.mode=best_effort as an explicit downgrade" }}
 {{- end }}
+{{- if and .Values.remoteMcp.enabled (or (not .Values.remoteMcp.tlsSecret) (not .Values.remoteMcp.allowedHosts)) }}
+{{- fail "remoteMcp requires tlsSecret and explicit allowedHosts" }}
+{{- end }}
+{{- if and .Values.remoteMcp.enabled .Values.tls.enabled }}
+{{- fail "remoteMcp sidecar requires a local plaintext Adapter listener; use a separate remote MCP deployment for an Adapter with TLS" }}
+{{- end }}
+{{- if and .Values.remoteMcp.enabled (has (toString .Values.image.tag) (list "v0.4.0" "0.4.0" "v0.5.0" "0.5.0" "v0.6.0" "0.6.0")) }}
+{{- fail "remoteMcp requires a newer candidate image containing adapter.remote_mcp; the v0.6.0 release image does not include it" }}
+{{- end }}
 metadata:
 {{- if and .Values.audit.postgresql.enabled (ne .Values.audit.mode "required") }}
 {{- fail "PostgreSQL audit requires audit.mode=required" }}
@@ -263,6 +272,52 @@ spec:
               mountPath: /etc/cube-adapter/tls
               readOnly: true
             {{- end }}
+        {{- if .Values.remoteMcp.enabled }}
+        - name: remote-mcp
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["python", "-m", "adapter.remote_mcp"]
+          args:
+            - --adapter-url
+            - {{ printf "http://127.0.0.1:%v" .Values.service.port | quote }}
+            - --host
+            - "0.0.0.0"
+            - --port
+            - {{ .Values.remoteMcp.port | quote }}
+            - --tls-cert-file
+            - /etc/cube-adapter/mcp-tls/tls.crt
+            - --tls-key-file
+            - /etc/cube-adapter/mcp-tls/tls.key
+            {{- range .Values.remoteMcp.allowedHosts }}
+            - --allowed-host
+            - {{ . | quote }}
+            {{- end }}
+            {{- range .Values.remoteMcp.allowedOrigins }}
+            - --allowed-origin
+            - {{ . | quote }}
+            {{- end }}
+          ports:
+            - name: mcp
+              containerPort: {{ .Values.remoteMcp.port }}
+          readinessProbe:
+            tcpSocket: {port: mcp}
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.remoteMcp.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+          volumeMounts:
+            - name: mcp-tls
+              mountPath: /etc/cube-adapter/mcp-tls
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+        {{- end }}
       securityContext:
         fsGroup: 65532
         fsGroupChangePolicy: OnRootMismatch
@@ -270,6 +325,17 @@ spec:
         seccompProfile:
           type: RuntimeDefault
       volumes:
+        {{- if .Values.remoteMcp.enabled }}
+        - name: mcp-tls
+          secret:
+            secretName: {{ .Values.remoteMcp.tlsSecret }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.remoteMcp.certKey }}
+                path: tls.crt
+              - key: {{ .Values.remoteMcp.privateKeyKey }}
+                path: tls.key
+        {{- end }}
         {{- range $name, $settings := dict "backends" .Values.backends "template-presets" .Values.templatePresets "mcp-policies" .Values.mcpPolicies }}
         {{- if $settings.existingConfigMap }}
         - name: {{ $name }}

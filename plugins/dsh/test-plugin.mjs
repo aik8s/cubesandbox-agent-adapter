@@ -53,7 +53,8 @@ try {
     "cube_task_result",
     "cube_task_cancel",
     "cube_task_receipt",
-    "cube_mcp_list", "cube_mcp_call", "cube_renew", "cube_profiles", "cube_recover", "cube_job_resume",
+    "cube_mcp_list", "cube_mcp_call", "cube_renew", "cube_profiles", "cube_doctor", "cube_recover", "cube_job_resume",
+    "cube_checkpoint_list", "cube_checkpoint_delete",
   ]);
   assert.equal(prompts.length, 1);
   const result = await tools[0].execute(
@@ -71,6 +72,17 @@ try {
   );
   assert.ok(calls[2].url.endsWith("/v1/tasks/plan"));
   assert.equal(calls[2].body.template, "clean-csv");
+  await tools.find(value => value.name === "cube_doctor").execute({},
+    { agent: { id: "session-42" }, rootCallId: "call-3", signal: new AbortController().signal });
+  assert.ok(calls[3].url.endsWith("/v1/doctor"));
+  assert.equal(calls.length, 4);
+  const execution = { agent: { id: "session-42" }, rootCallId: "extra", signal: new AbortController().signal };
+  await tools.find(value => value.name === "cube_checkpoint").execute({ mode: "fs-only" }, execution);
+  assert.equal(calls[5].body.mode, "fs-only");
+  await tools.find(value => value.name === "cube_checkpoint_list").execute({}, execution);
+  assert.ok(calls[7].url.endsWith("/checkpoints/list"));
+  await tools.find(value => value.name === "cube_checkpoint_delete").execute({ checkpoint_ref: "checkpoint_test" }, execution);
+  assert.ok(calls[9].url.endsWith("/checkpoints/checkpoint_test/delete"));
   dispose();
   console.log("DSH Cube Adapter plugin test: OK");
 } finally {

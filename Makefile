@@ -12,7 +12,7 @@ test-python:
 	$(PYTHON) tests/test_trusted_execution.py
 
 lint:
-	ruff check adapter plugins/hermes examples/trusted-execution/tasks scripts/verify_receipt.py tests/test_trusted_execution.py tests/acceptance/claude_code_live_smoke.py tests/acceptance/test_claude_code_live_smoke.py tests/acceptance/trusted_tasks_acceptance.py tests/acceptance/merge_client_results.py tests/acceptance/cubesandbox_v071_volume_snapshot.py tests/acceptance/cubesandbox_release_smoke.py tests/acceptance/cubesandbox_mcp_gateway_smoke.py tests/acceptance/mcp_echo_server.py tests/acceptance/multi_backend_live.py tests/acceptance/openclaw_preset_live.py tests/acceptance/verify_feature_clients.py tests/acceptance/test_verify_feature_clients.py
+	ruff check adapter plugins/hermes examples/trusted-execution/tasks scripts/verify_receipt.py tests/test_trusted_execution.py tests/acceptance/claude_code_live_smoke.py tests/acceptance/test_claude_code_live_smoke.py tests/acceptance/trusted_tasks_acceptance.py tests/acceptance/merge_client_results.py tests/acceptance/cubesandbox_v071_volume_snapshot.py tests/acceptance/cubesandbox_v080_adapter_live.py tests/acceptance/cubesandbox_release_smoke.py tests/acceptance/cubesandbox_mcp_gateway_smoke.py tests/acceptance/mcp_echo_server.py tests/acceptance/multi_backend_live.py tests/acceptance/openclaw_preset_live.py tests/acceptance/verify_feature_clients.py tests/acceptance/test_verify_feature_clients.py tests/acceptance/remote_mcp_live.py tests/acceptance/opensandbox_probe.py
 	node --check plugins/openclaw/index.js
 	node --check plugins/dsh/index.js
 	node --check scripts/configure-opencode.mjs

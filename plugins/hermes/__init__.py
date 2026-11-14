@@ -137,8 +137,18 @@ TOOL_SCHEMAS.update(
         },
         "cube_checkpoint": {
             "name": "cube_checkpoint",
-            "description": "Create a policy-gated CubeSandbox checkpoint.",
-            "parameters": _object({"name": {"type": "string"}}),
+            "description": "Create a full or fs-only checkpoint; fs-only forks cold and cannot roll back.",
+            "parameters": _object({"name": {"type": "string"}, "mode": {"type": "string", "enum": ["full", "fs-only"]}}),
+        },
+        "cube_checkpoint_list": {
+            "name": "cube_checkpoint_list",
+            "description": "List checkpoints owned by this session's lease.",
+            "parameters": _object({}),
+        },
+        "cube_checkpoint_delete": {
+            "name": "cube_checkpoint_delete",
+            "description": "Delete one checkpoint owned by this session's lease.",
+            "parameters": _object({"checkpoint_ref": {"type": "string"}}, ["checkpoint_ref"]),
         },
         "cube_rollback": {
             "name": "cube_rollback",
@@ -305,7 +315,7 @@ def _handler(
         try:
             body = dict(args or {})
             selected_profile = body.pop("profile", None)
-            if operation in {"profiles", "recover"}:
+            if operation in {"profiles", "recover", "doctor"}:
                 path = "/v1/" + operation
                 body = {}
             elif operation == "job_resume":
@@ -356,6 +366,13 @@ def _handler(
                     path = f"/v1/jobs/{job_ref}/{suffix}"
                 elif operation == "checkpoint":
                     path = f"/v1/leases/{lease['lease_ref']}/checkpoints"
+                elif operation == "checkpoint_list":
+                    path = f"/v1/leases/{lease['lease_ref']}/checkpoints/list"
+                elif operation == "checkpoint_delete":
+                    checkpoint_ref = body.pop("checkpoint_ref", "")
+                    if not isinstance(checkpoint_ref, str) or not CHECKPOINT_REF_RE.fullmatch(checkpoint_ref):
+                        raise AdapterClientError("invalid Cube Adapter checkpoint reference")
+                    path = f"/v1/leases/{lease['lease_ref']}/checkpoints/{checkpoint_ref}/delete"
                 elif operation in {"rollback", "fork"}:
                     checkpoint_ref = body.pop("checkpoint_ref", "")
                     if not isinstance(checkpoint_ref, str) or not CHECKPOINT_REF_RE.fullmatch(
@@ -409,6 +426,11 @@ TOOL_SCHEMAS.update(
             "description": "Discover authorized cluster profiles.",
             "parameters": _object({}),
         },
+        "cube_doctor": {
+            "name": "cube_doctor",
+            "description": "Diagnose authorized profiles without creating a sandbox.",
+            "parameters": _object({}),
+        },
         "cube_recover": {
             "name": "cube_recover",
             "description": "Inspect durable inventory without restarting commands.",
@@ -432,6 +454,7 @@ TOOL_SCHEMAS.update(
 for _name, _schema in TOOL_SCHEMAS.items():
     if not _name.startswith("cube_task_") and _name not in {
         "cube_profiles",
+        "cube_doctor",
         "cube_recover",
         "cube_job_resume",
     }:
@@ -477,8 +500,11 @@ def register(ctx: Any) -> None:
         ("cube_mcp_call", "mcp-call"),
         ("cube_renew", "renew"),
         ("cube_profiles", "profiles"),
+        ("cube_doctor", "doctor"),
         ("cube_recover", "recover"),
         ("cube_job_resume", "job_resume"),
+        ("cube_checkpoint_list", "checkpoint_list"),
+        ("cube_checkpoint_delete", "checkpoint_delete"),
     ):
         ctx.register_tool(
             name=name,

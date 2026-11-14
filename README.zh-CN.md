@@ -23,6 +23,10 @@ Adapter 是唯一持有 Cube 连接配置、完整 Sandbox ID 和流量令牌的
 > 带审批可信任务基础上，新增受控多集群执行与 PostgreSQL 强审计。上线前仍需完成部署侧加固，
 > 并在每个目标 CubeSandbox 环境重新验收。
 
+当前源码还包含尚未发布的远程 MCP、连接诊断和任务清理状态功能；使用方式、
+真实沙箱验收和兼容性边界见[候选功能与实测记录](docs/remote-mcp-acceptance.zh-CN.md)。
+已有 v0.6.0 发布镜像不包含这些候选功能。
+
 v0.6.0 包含[多集群路由、内部模板、受控 MCP、长任务恢复与 PostgreSQL 强审计](docs/production-features.zh-CN.md)，
 以及 Light 审计/审批控制台。[两个真实集群和五个原生客户端已完成实测](docs/production-features.zh-CN.md#两个真实集群与应用验收2026-10-15)，
 附四个客户端的新 Light 截图。旧 v0.5.0 镜像不包含这些新能力。
@@ -256,12 +260,12 @@ Agent 工具结果中的 sandbox_ref
 
 ## 项目包含什么
 
-- 当前源码使用固定版本 `cubesandbox==0.7.3` SDK 的带认证 Python Adapter；
+- 当前源码使用固定版本 `cubesandbox==0.8.0` SDK 的带认证 Python Adapter；
   [v0.7.3 测试和生产集群升级、快照/MCP 实测及 Light 截图](docs/cubesandbox-upstream.md)已补充，
   随后完成[当前源码的 Adapter 验收与经授权的生产镜像升级](docs/production-features.zh-CN.md#实测与界面)；
   五个原生客户端也已通过新路由、续租与日志接续流程；
 - 默认拒绝公网的声明式 Profile，并提供持久卷与检查点能力门控；
-- OpenClaw、DSH、Hermes 当前源码共用 25 个工具（原有 19 个加 6 个新入口），
+- OpenClaw、DSH、Hermes 当前源码共用 28 个工具，
   并提供 Codex、Claude Code、OpenCode 可使用的 MCP 门面；
 - DSH Cordis Plugin，以及禁用常见宿主 Shell/FS 工具的 Profile Patch；
 - 通过官方 Plugin Doctor 校验的 Hermes Agent 原生 Tool Plugin；
@@ -654,7 +658,7 @@ MCP 或自定义客户端。
 同命名空间 Redis 会自动生成出站规则；跨命名空间时配置 `redisNamespace`，并可追加
 `redisPodSelector`。
 
-`cubesandbox==0.7.3` 不读取 `CUBE_PROXY_SCHEME`。从其他 SDK 复制连接参数前，
+`cubesandbox==0.8.0` 不读取 `CUBE_PROXY_SCHEME`。从其他 SDK 复制连接参数前，
 请先核对当前 SDK 版本。
 
 ## 测试与验收
@@ -713,6 +717,12 @@ hermes plugins disable cube-adapter-tools
 - CubeSandbox v0.7.1 已支持带 Volume Plugin 或 Host Mount 的 Checkpoint，但采用
   外部引用语义：VM/rootfs 会回退，挂载数据保持最新状态且可能受原节点约束。因此
   Profile 仍需在存储专项验收后显式启用 `allow_checkpoint_with_mounts`；
+- CubeSandbox v0.8.0 中，`cube_checkpoint` 除默认的 `mode: "full"` 外支持
+  `mode: "fs-only"`：只保存根文件系统，不保存内存和进程；`cube_fork` 从快照冷启动
+  新沙箱，`cube_rollback` 会拒绝该快照。外部挂载不在其中，旧模板可能需要用 v0.8.0
+  运行时重建。实测 XFS 后端在完整回滚后创建 fs-only 快照失败，详见上游测试记录。
+  `cube_checkpoint_list` 和 `cube_checkpoint_delete` 用于列出和删除当前租约的快照，
+  分别受对应操作权限控制；
 - Profile 的 `network` 配置只归运维方所有，模型不能动态传入；
 - DSH 当前暴露 `cube_*` 工具，还不是透明的原生 `shell/fs/pty` Provider；
 - OpenClaw 当前没有稳定的通用第四种 Sandbox Backend，本项目使用公开的 Tool

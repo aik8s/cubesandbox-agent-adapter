@@ -153,8 +153,8 @@ export function apply(ctx, config = {}) {
     ],
     [
       "cube_checkpoint",
-      "Create a policy-gated CubeSandbox checkpoint.",
-      object({ name: { type: "string" } }),
+      "Create a full or fs-only checkpoint. fs-only forks cold and cannot roll back.",
+      object({ name: { type: "string" }, mode: { type: "string", enum: ["full", "fs-only"] } }),
       (lease, args) => [`/v1/leases/${lease.lease_ref}/checkpoints`, args],
     ],
     [
@@ -232,8 +232,11 @@ export function apply(ctx, config = {}) {
     ["cube_mcp_call", "Call a schema-checked sandbox MCP tool.", object({ name: { type: "string" }, arguments: { type: "object" } }, ["name"]), (lease, args) => [`/v1/leases/${lease.lease_ref}/mcp-call`, args]],
     ["cube_renew", "Renew a policy-bounded lease.", object({}), lease => [`/v1/leases/${lease.lease_ref}/renew`, {}]],
     ["cube_profiles", "Discover authorized cluster profiles.", object({}), () => ["/v1/profiles", {}], false],
+    ["cube_doctor", "Diagnose authorized profiles without creating a sandbox.", object({}), () => ["/v1/doctor", {}], false],
     ["cube_recover", "Inspect execution inventory without rerunning commands.", object({}), () => ["/v1/recover", {}], false],
     ["cube_job_resume", "Resume independent stdout/stderr byte cursors.", object({ job_ref: { type: "string" }, stdout_offset: { type: "integer", minimum: 0 }, stderr_offset: { type: "integer", minimum: 0 }, max_bytes: { type: "integer", minimum: 1, maximum: 1048576 } }, ["job_ref"]), (_lease, { job_ref, ...body }) => [`/v1/jobs/${encodeURIComponent(job_ref)}/resume`, body], false],
+    ["cube_checkpoint_list", "List checkpoints owned by this session's lease.", object({}), lease => [`/v1/leases/${lease.lease_ref}/checkpoints/list`, {}]],
+    ["cube_checkpoint_delete", "Delete one checkpoint owned by this session's lease.", object({ checkpoint_ref: { type: "string" } }, ["checkpoint_ref"]), (lease, { checkpoint_ref }) => [`/v1/leases/${lease.lease_ref}/checkpoints/${encodeURIComponent(checkpoint_ref)}/delete`, {}]],
   );
   const disposers = definitions.map(([toolName, description, parameters, endpoint, requiresLease]) =>
     register(

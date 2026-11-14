@@ -272,13 +272,13 @@ following Chinese articles on [aik8s.run](https://aik8s.run/):
 
 ## What is included
 
-- current-source authenticated Python Adapter using pinned `cubesandbox==0.7.3`; the
+- current-source authenticated Python Adapter using pinned `cubesandbox==0.8.0`; the
   [v0.7.3 test/production upgrades, snapshot/MCP canaries and Light screenshots](docs/cubesandbox-upstream.md)
   passed, followed by [current-source Adapter acceptance and an authorized
   production image upgrade](docs/production-features.md#validation-and-light-ui-evidence).
   five native clients also passed the new routing/renewal/log-resume flow;
 - fail-closed declarative profiles with persistent-volume and checkpoint gates;
-- current-source OpenClaw, DSH and Hermes plugins with 25 tools (19 existing plus 6 new), covering execution, file, async
+- current-source OpenClaw, DSH and Hermes plugins with 28 tools, covering execution, file, async
   job, checkpoint, and trusted-task tools, plus an MCP facade for Codex,
   Claude Code and OpenCode;
 - DSH Cordis Plugin and a patch that disables common host Shell/FS tools;
@@ -701,7 +701,7 @@ Prometheus scraper and `networkPolicy.extraEgress` for external OIDC JWKS or
 HTTP audit collectors. Same-namespace Redis egress is generated automatically;
 set `redisNamespace` and optionally `redisPodSelector` for a remote namespace.
 
-`cubesandbox==0.7.3` does not read `CUBE_PROXY_SCHEME`; do not copy that variable
+`cubesandbox==0.8.0` does not read `CUBE_PROXY_SCHEME`; do not copy that variable
 from another SDK without checking the SDK version in use.
 
 ## Test and verify
@@ -764,6 +764,14 @@ hermes plugins disable cube-adapter-tools
   external references: VM/rootfs state rolls back, but mounted data stays
   current and can remain node-bound. Profiles therefore require an explicit
   `allow_checkpoint_with_mounts` opt-in after storage-specific validation.
+- On CubeSandbox v0.8.0, `cube_checkpoint` accepts `mode: "fs-only"` as well as
+  the default `"full"`. A filesystem-only checkpoint captures the root filesystem,
+  not process or memory state; `cube_fork` cold-starts a new sandbox from it and
+  `cube_rollback` rejects it. External mounts are not included. Older templates
+  may require rebuilding with the v0.8.0 runtime. An fs-only snapshot taken after
+  a full rollback failed on the tested XFS backend; see the upstream test notes.
+  `cube_checkpoint_list` and `cube_checkpoint_delete` manage only checkpoints
+  belonging to the current lease and require their respective action scopes.
 - Profile `network` fields are operator-owned configuration, never model input.
 - The DSH integration exposes `cube_*` tools; it is not yet a transparent native
   `shell/fs/pty` provider.

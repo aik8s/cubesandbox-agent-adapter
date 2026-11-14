@@ -1,4 +1,4 @@
-cubesandbox==0.7.3
+cubesandbox==0.8.0
 cryptography>=50,<51
 mcp>=2.0,<3
 prometheus-client>=0.21,<1
