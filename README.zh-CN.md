@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[项目官网](https://aik8s.github.io/cubesandbox-agent-adapter/) · [v0.6.0 更新日志](CHANGELOG.md) · [官网发布说明](docs/website.md)
+[项目官网](https://aik8s.github.io/cubesandbox-agent-adapter/) · [v0.7.0 更新日志](CHANGELOG.md) · [官网发布说明](docs/website.md)
 
 这是一个社区集成项目，用于把 OpenClaw、DeepSeek Harness（DSH）、Hermes
 Agent 以及 Codex、Claude Code、OpenCode 等 MCP Host 的工具调用，经受控策略路由到
@@ -19,13 +19,14 @@ Codex / Claude Code / OpenCode ─→ MCP stdio ─┘            │
 Adapter 是唯一持有 Cube 连接配置、完整 Sandbox ID 和流量令牌的组件。Runtime
 插件只获得不透明租约；返回给模型的是短 Sandbox 引用，不包含底层凭据。
 
-> **项目状态：** `v0.6.0` 是面向生产形态的参考实现，在加密租约、多租户策略和
+> **项目状态：** `v0.7.0` 是面向生产形态的参考实现，在加密租约、多租户策略和
 > 带审批可信任务基础上，新增受控多集群执行与 PostgreSQL 强审计。上线前仍需完成部署侧加固，
 > 并在每个目标 CubeSandbox 环境重新验收。
 
-当前源码还包含尚未发布的远程 MCP、连接诊断和任务清理状态功能；使用方式、
-真实沙箱验收和兼容性边界见[候选功能与实测记录](docs/remote-mcp-acceptance.zh-CN.md)。
-已有 v0.6.0 发布镜像不包含这些候选功能。
+v0.7.0 新增 CubeSandbox v0.8.0 文件系统快照、快照列表和删除工具，以及远程 MCP、
+连接诊断和任务清理状态。[真实沙箱验收与快照限制](docs/cubesandbox-upstream.md)
+和[远程 MCP 实测记录](docs/remote-mcp-acceptance.zh-CN.md)说明了已验证范围。
+v0.6.0 镜像不包含这些新功能。
 
 v0.6.0 包含[多集群路由、内部模板、受控 MCP、长任务恢复与 PostgreSQL 强审计](docs/production-features.zh-CN.md)，
 以及 Light 审计/审批控制台。[两个真实集群和五个原生客户端已完成实测](docs/production-features.zh-CN.md#两个真实集群与应用验收2026-10-15)，
@@ -314,7 +315,7 @@ Hermes 路径已在 macOS Apple Silicon 的 Hermes Agent 0.20.6 与 CubeSandbox
 克隆仓库：
 
 ```bash
-git clone --branch v0.6.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
+git clone --branch v0.7.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
 cd cubesandbox-agent-adapter
 ```
 
@@ -345,7 +346,7 @@ cd cubesandbox-agent-adapter
   --namespace my-agent-runtime \
   --release cube-adapter \
   --secret existing-adapter-secret \
-  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.6.0 \
+  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.7.0 \
   --cube-api-url https://cube-api.example.internal \
   --cube-api-port 443 \
   --cube-proxy-host cube-proxy.example.internal \
@@ -448,7 +449,7 @@ Plugin Doctor。安装后启动一个新的受限会话：
 hermes -t cube-adapter
 ```
 
-v0.6.0 插件注册 25 个工具，旧 v0.5.0 发布包为 19 个。启用 Hermes
+v0.7.0 插件注册 28 个工具，旧 v0.6.0 发布包为 25 个。启用 Hermes
 工具压缩时，这些工具可能不会直接塞进模型 Prompt，而是先出现在内置的
 `tool_describe` / `tool_call` 延迟目录中；这是正常行为，本仓库的真实联调已经覆盖
 了这条路径。
@@ -490,7 +491,7 @@ OpenCode 管理，Adapter 不需要模型 API Key。
 
 ## Docker 部署与本地开发
 
-首次部署请使用 [Docker Compose 部署指南](docs/deploy-docker.zh-CN.md)：它从 v0.6.0
+首次部署请使用 [Docker Compose 部署指南](docs/deploy-docker.zh-CN.md)：它从 v0.7.0
 发布镜像启动，包含密钥生成、网络地址选择、健康检查、真实沙箱验收、客户端接入和升级。
 Docker 只承载 Adapter，仍需连接已部署的 CubeSandbox 后端。
 

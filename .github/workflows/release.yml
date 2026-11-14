@@ -64,6 +64,8 @@ jobs:
         platform: [linux/amd64, linux/arm64]
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref }}
       - if: matrix.platform == 'linux/arm64'
         uses: docker/setup-qemu-action@v4
       - name: Verify immutable published runtime
@@ -78,8 +80,10 @@ jobs:
           [[ "$digest" =~ ^[a-f0-9]{64}$ ]]
           version="${EXPECTED_VERSION:-$(cat VERSION)}"
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          sdk_version="$(sed -nE 's/^cubesandbox==([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' adapter/requirements.txt)"
+          [[ "$sdk_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
           # Each architecture has its own runner: the classic Docker store
           # cannot retain two platform variants under one index digest.
           test "$(docker run --rm --platform "$RELEASE_PLATFORM" "$RELEASE_IMAGE" --version)" = "$version"
-          docker run --rm --platform "$RELEASE_PLATFORM" --entrypoint python "$RELEASE_IMAGE" \
-            -c 'import importlib.metadata as m, os; assert m.version("cubesandbox") == "0.7.3"; assert os.geteuid() != 0; print("SDK 0.7.3 / non-root runtime OK")'
+          docker run --rm --platform "$RELEASE_PLATFORM" -e EXPECTED_CUBE_SDK="$sdk_version" --entrypoint python "$RELEASE_IMAGE" \
+            -c 'import importlib.metadata as m, os; assert m.version("cubesandbox") == os.environ["EXPECTED_CUBE_SDK"]; assert os.geteuid() != 0; print("Expected CubeSandbox SDK / non-root runtime OK")'

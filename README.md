@@ -2,7 +2,7 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-[Project website](https://aik8s.github.io/cubesandbox-agent-adapter/) · [v0.6.0 changelog](CHANGELOG.md) · [Website publishing](docs/website.md)
+[Project website](https://aik8s.github.io/cubesandbox-agent-adapter/) · [v0.7.0 changelog](CHANGELOG.md) · [Website publishing](docs/website.md)
 
 Community integration that routes OpenClaw, DeepSeek Harness (DSH), Hermes
 Agent and MCP hosts such as Codex, Claude Code or OpenCode into policy-controlled
@@ -20,10 +20,16 @@ The Adapter is the only component that holds Cube connection settings, full
 Sandbox IDs and traffic tokens. Runtime plugins receive opaque leases and
 return only short Sandbox references to the model.
 
-> **Project status:** v0.6.0 is a production-oriented reference implementation.
+> **Project status:** v0.7.0 is a production-oriented reference implementation.
 > It adds governed multi-backend execution and PostgreSQL audit to encrypted
 > leases, multi-tenant policy and approved tasks. Deployment-specific hardening and
 > acceptance tests are still required in every target CubeSandbox environment.
+
+v0.7.0 adds CubeSandbox v0.8.0 filesystem-only checkpoints, lease-scoped
+checkpoint listing and deletion, a remote MCP endpoint, and connection diagnostics.
+[Real-backend validation and known snapshot limitations](docs/cubesandbox-upstream.md#v080adapter-兼容性和快照实测2026-11-14)
+cover the tested scope; [remote MCP acceptance](docs/remote-mcp-acceptance.zh-CN.md)
+documents the new transport.
 
 v0.6.0 includes [multi-backend routing, internal templates, governed MCP,
 task recovery and PostgreSQL required audit](docs/production-features.md), plus a
@@ -331,7 +337,7 @@ a CubeSandbox 0.7.0 Kubernetes lab cluster.
 Clone the repository:
 
 ```bash
-git clone --branch v0.6.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
+git clone --branch v0.7.0 --depth 1 https://github.com/aik8s/cubesandbox-agent-adapter.git
 cd cubesandbox-agent-adapter
 ```
 
@@ -362,7 +368,7 @@ Override the image, namespace or Secret when needed:
   --namespace my-agent-runtime \
   --release cube-adapter \
   --secret existing-adapter-secret \
-  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.6.0 \
+  --image ghcr.io/aik8s/cubesandbox-agent-adapter:v0.7.0 \
   --cube-api-url https://cube-api.example.internal \
   --cube-api-port 443 \
   --cube-proxy-host cube-proxy.example.internal \
@@ -468,7 +474,7 @@ Doctor in CI mode. Start a new restricted session afterward:
 hermes -t cube-adapter
 ```
 
-v0.6.0 plugins register 25 tools; the older v0.5.0 release registers 19.
+v0.7.0 plugins register 28 tools; the older v0.6.0 release registers 25.
 With Hermes tool compression enabled, these tools may initially appear through
 the built-in `tool_describe` / `tool_call` catalog instead of being copied into
 the model prompt directly; this is expected and was covered by the real test.
@@ -514,7 +520,7 @@ Adapter.
 ## Docker deployment and local development
 
 For a first installation, follow the [Docker Compose deployment guide](docs/deploy-docker.md).
-It uses the v0.6.0 published image and covers credentials, network addresses,
+It uses the v0.7.0 published image and covers credentials, network addresses,
 health checks, real sandbox acceptance, client integration, and upgrades.
 Docker runs the Adapter; an existing CubeSandbox backend is still required.
 

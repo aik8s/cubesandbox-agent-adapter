@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DEFAULT_IMAGE="ghcr.io/aik8s/cubesandbox-agent-adapter:v0.6.0"
+DEFAULT_IMAGE="ghcr.io/aik8s/cubesandbox-agent-adapter:v0.7.0"
 
 die() {
   printf 'error: %s\n' "$*" >&2

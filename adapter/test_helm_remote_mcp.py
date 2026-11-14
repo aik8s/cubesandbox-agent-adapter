@@ -29,9 +29,9 @@ class RemoteMcpChartTest(unittest.TestCase):
         self.assertNotEqual(missing.returncode, 0)
         self.assertIn("requires tlsSecret", missing.stderr)
         old = self.render("remoteMcp.enabled=true", "remoteMcp.tlsSecret=tls",
-                          "remoteMcp.allowedHosts[0]=mcp.example.test")
+                          "remoteMcp.allowedHosts[0]=mcp.example.test", "image.tag=v0.6.0")
         self.assertNotEqual(old.returncode, 0)
-        self.assertIn("candidate image", old.stderr)
+        self.assertIn("v0.7.0 or newer", old.stderr)
         incompatible = self.render("remoteMcp.enabled=true", "remoteMcp.tlsSecret=tls",
             "remoteMcp.allowedHosts[0]=mcp.example.test", "image.tag=candidate", "tls.enabled=true",
             "tls.existingSecret=adapter-tls")
@@ -40,7 +40,7 @@ class RemoteMcpChartTest(unittest.TestCase):
 
     def test_enabled_has_tls_and_no_shared_token(self):
         result = self.render("remoteMcp.enabled=true", "remoteMcp.tlsSecret=tls",
-                             "remoteMcp.allowedHosts[0]=mcp.example.test", "image.tag=candidate")
+                             "remoteMcp.allowedHosts[0]=mcp.example.test")
         self.assertEqual(result.returncode, 0, result.stderr)
         docs = list(yaml.safe_load_all(result.stdout))
         deployment = next(x for x in docs if x and x["kind"] == "Deployment")

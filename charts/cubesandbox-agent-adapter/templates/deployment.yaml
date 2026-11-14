@@ -19,7 +19,7 @@ kind: Deployment
 {{- fail "remoteMcp sidecar requires a local plaintext Adapter listener; use a separate remote MCP deployment for an Adapter with TLS" }}
 {{- end }}
 {{- if and .Values.remoteMcp.enabled (has (toString .Values.image.tag) (list "v0.4.0" "0.4.0" "v0.5.0" "0.5.0" "v0.6.0" "0.6.0")) }}
-{{- fail "remoteMcp requires a newer candidate image containing adapter.remote_mcp; the v0.6.0 release image does not include it" }}
+{{- fail "remoteMcp requires an image containing adapter.remote_mcp, such as v0.7.0 or newer" }}
 {{- end }}
 metadata:
 {{- if and .Values.audit.postgresql.enabled (ne .Values.audit.mode "required") }}

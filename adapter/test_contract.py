@@ -99,7 +99,7 @@ class OpenApiContractTest(unittest.TestCase):
             str(hermes["version"]),
             str(project_version.group(1)),
         }
-        self.assertEqual(versions, {"0.6.0"})
+        self.assertEqual(versions, {"0.7.0"})
         expected_image = "ghcr.io/aik8s/cubesandbox-agent-adapter:v" + VERSION
         values = yaml.safe_load((root / "charts/cubesandbox-agent-adapter/values.yaml").read_text())
         self.assertEqual(values["image"]["tag"], "v" + VERSION)

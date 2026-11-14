@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v0.7.0 — 2026-11-14
+
 - Pin the CubeSandbox Python SDK to v0.8.0 and support filesystem-only
   checkpoints, cold-start forks, and lease-scoped checkpoint listing/deletion.
   Record the observed XFS limitation after a full rollback.

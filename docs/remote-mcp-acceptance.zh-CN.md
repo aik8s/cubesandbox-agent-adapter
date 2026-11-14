@@ -1,6 +1,6 @@
-# 远程 MCP、连接诊断与清理状态：候选功能和实测
+# 远程 MCP、连接诊断与清理状态：功能和实测
 
-本文描述仓库中**尚未发布的源码**，不是 v0.6.0 已发布镜像的能力。验收使用独立的本地 Adapter 候选进程和测试集群沙箱，没有替换已有服务。发布镜像、上线配置和各 Agent 应用的界面联调需要另行完成。
+本文描述 v0.7.0 的功能，v0.6.0 镜像不包含这些能力。验收使用独立的本地 Adapter 候选进程和测试集群沙箱，没有替换已有服务；实际部署配置及各 Agent 应用的界面联调需要在目标环境另行完成。
 
 ## 接入方式
 
@@ -17,7 +17,7 @@ python -m adapter.remote_mcp --adapter-url http://127.0.0.1:18080 \
 
 入口校验已有 Token，不提供 MCP OAuth 授权服务器发现或浏览器登录流程；Token 的颁发与分发仍由部署方负责。请使用独立身份及最小权限，避免把 Token 放进版本库。
 
-Helm 的 `remoteMcp.enabled` 默认关闭。启用时需要使用包含本功能的**新候选镜像**，并设置 `remoteMcp.tlsSecret` 和 `remoteMcp.allowedHosts`。Secret 需包含 `tls.crt` 和 `tls.key`，入口代理也须正确配置到侧车的 TLS；按实际客户端调整现有 NetworkPolicy。侧车与同 Pod Adapter 使用本地 HTTP，Chart 会拒绝同时开启 Adapter 的 `tls.enabled`；若后端需要 HTTPS，可独立运行 MCP 入口并指向 HTTPS Adapter。该入口目前不提供连接后端的 mTLS 客户端证书。
+Helm 的 `remoteMcp.enabled` 默认关闭。启用时需要使用 v0.7.0 或其他包含本功能的镜像，并设置 `remoteMcp.tlsSecret` 和 `remoteMcp.allowedHosts`。Secret 需包含 `tls.crt` 和 `tls.key`，入口代理也须正确配置到侧车的 TLS；按实际客户端调整现有 NetworkPolicy。侧车与同 Pod Adapter 使用本地 HTTP，Chart 会拒绝同时开启 Adapter 的 `tls.enabled`；若后端需要 HTTPS，可独立运行 MCP 入口并指向 HTTPS Adapter。该入口目前不提供连接后端的 mTLS 客户端证书。
 
 ## 诊断与能力发现
 
