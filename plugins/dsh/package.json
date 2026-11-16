@@ -11,5 +11,25 @@
   "main": "index.js",
   "exports": {
     ".": "./index.js"
+  },
+  "description": "DeepSeek Harness tools for CubeSandbox Agent Adapter.",
+  "keywords": [
+    "dsh-plugin",
+    "deepseek-harness",
+    "cubesandbox",
+    "sandbox"
+  ],
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "LICENSE",
+    "assets/dsh-natural-routing-light.png",
+    "screenshots.json"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
   }
 }
